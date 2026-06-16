@@ -1,6 +1,6 @@
 'use client';
 
-import {Mic, MicOff} from "lucide-react";
+import {CheckCircle2, Clock3, Mic, MicOff, ShieldCheck} from "lucide-react";
 import useVapi from "@/hooks/useVapi";
 import {IBook} from "@/types";
 import Image from "next/image";
@@ -47,8 +47,7 @@ const VapiControls = ({ book }: { book: IBook }) => {
 
     return (
         <>
-            <div className="max-w-4xl mx-auto flex flex-col gap-8">
-                {/* Header Card */}
+            <div className="max-w-5xl mx-auto flex flex-col gap-6">
                 <div className="vapi-header-card">
                     <div className="vapi-cover-wrapper">
                         <Image
@@ -71,7 +70,7 @@ const VapiControls = ({ book }: { book: IBook }) => {
                                 {isActive ? (
                                     <Mic className="size-7 text-white" />
                                 ) : (
-                                    <MicOff className="size-7 text-[#212a3b]" />
+                                    <MicOff className="size-7 text-[var(--text-primary)]" />
                                 )}
                             </button>
                         </div>
@@ -79,10 +78,11 @@ const VapiControls = ({ book }: { book: IBook }) => {
 
                     <div className="flex flex-col gap-4 flex-1">
                         <div>
-                            <h1 className="text-2xl sm:text-3xl font-bold font-serif text-[#212a3b] mb-1">
+                            <p className="mb-2 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--accent-warm)]">Voice practice</p>
+                            <h1 className="text-2xl sm:text-3xl font-semibold text-[var(--text-primary)] mb-1">
                                 {book.title}
                             </h1>
-                            <p className="text-[#3d485e] font-medium">by {book.author}</p>
+                            <p className="text-[var(--text-muted)] font-medium">Source owner: {book.author}</p>
                         </div>
 
                         <div className="flex flex-wrap gap-3">
@@ -92,10 +92,12 @@ const VapiControls = ({ book }: { book: IBook }) => {
                             </div>
 
                             <div className="vapi-status-indicator">
-                                <span className="vapi-status-text">Voice: {book.persona || "Daniel"}</span>
+                                <ShieldCheck className="size-4 text-[var(--accent-warm)]" />
+                                <span className="vapi-status-text">Grounded in uploaded docs</span>
                             </div>
 
                             <div className="vapi-status-indicator">
+                                <Clock3 className="size-4 text-[var(--accent-warm)]" />
                                 <span className="vapi-status-text">
                                     {formatDuration(duration)}/{formatDuration(maxDurationSeconds)}
                                 </span>
@@ -104,15 +106,29 @@ const VapiControls = ({ book }: { book: IBook }) => {
                     </div>
                 </div>
 
-            <div className="vapi-transcript-wrapper">
-                <div className="transcript-container min-h-[400px]">
-                    <Transcript
-                        messages={messages}
-                        currentMessage={currentMessage}
-                        currentUserMessage={currentUserMessage}
-                    />
+                <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+                    <div className="vapi-transcript-wrapper">
+                        <div className="transcript-container min-h-[420px]">
+                            <Transcript
+                                messages={messages}
+                                currentMessage={currentMessage}
+                                currentUserMessage={currentUserMessage}
+                            />
+                        </div>
+                    </div>
+                    <aside className="space-y-3">
+                        {[
+                            "Answer in your own words.",
+                            "Ask for a scenario when you want practice.",
+                            "Revise will correct you using the uploaded source.",
+                        ].map((item) => (
+                            <div key={item} className="flex gap-3 rounded-xl border border-[var(--border-subtle)] bg-white p-4 shadow-sm">
+                                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                                <p className="text-sm leading-5 text-[var(--text-secondary)]">{item}</p>
+                            </div>
+                        ))}
+                    </aside>
                 </div>
-            </div>
             </div>
         </>
     )

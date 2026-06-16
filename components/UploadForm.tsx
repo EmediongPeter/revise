@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Upload, ImageIcon } from 'lucide-react';
@@ -9,11 +9,11 @@ import { BookUploadFormValues } from '@/types';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ACCEPTED_PDF_TYPES, ACCEPTED_IMAGE_TYPES, DEFAULT_VOICE } from '@/lib/constants';
+import { ACCEPTED_PDF_TYPES, ACCEPTED_IMAGE_TYPES } from '@/lib/constants';
 import FileUploader from './FileUploader';
 import VoiceSelector from './VoiceSelector';
 import LoadingOverlay from './LoadingOverlay';
-import {useAuth, useUser} from "@clerk/nextjs";
+import {useAuth} from "@clerk/nextjs";
 import { toast } from 'sonner';
 import {checkBookExists, createBook, saveBookSegments} from "@/lib/actions/book.actions";
 import {useRouter} from "next/navigation";
@@ -22,13 +22,8 @@ import {upload} from "@vercel/blob/client";
 
 const UploadForm = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [isMounted, setIsMounted] = useState(false);
     const { userId } = useAuth();
     const router = useRouter()
-
-    useEffect(() => {
-        setIsMounted(true);
-    }, []);
 
     const form = useForm<BookUploadFormValues>({
         resolver: zodResolver(UploadSchema),
@@ -43,7 +38,7 @@ const UploadForm = () => {
 
     const onSubmit = async (data: BookUploadFormValues) => {
         if(!userId) {
-           return toast.error("Please login to upload books");
+           return toast.error("Please sign in to create a training module");
         }
 
         setIsSubmitting(true);
@@ -54,7 +49,7 @@ const UploadForm = () => {
             const existsCheck = await checkBookExists(data.title);
 
             if(existsCheck.exists && existsCheck.book) {
-                toast.info("Book with same title already exists.");
+                toast.info("A module with this title already exists.");
                 form.reset()
                 router.push(`/books/${existsCheck.book.slug}`)
                 return;
@@ -110,7 +105,7 @@ const UploadForm = () => {
             });
 
             if(!book.success) {
-                toast.error(book.error as string || "Failed to create book");
+                toast.error(book.error as string || "Failed to create module");
                 if (book.isBillingError) {
                     router.push("/subscriptions");
                 }
@@ -118,7 +113,7 @@ const UploadForm = () => {
             }
 
             if(book.alreadyExists) {
-                toast.info("Book with same title already exists.");
+                toast.info("A module with this title already exists.");
                 form.reset()
                 router.push(`/books/${book.data.slug}`)
                 return;
@@ -127,8 +122,8 @@ const UploadForm = () => {
             const segments = await saveBookSegments(book.data._id, userId, parsedPDF.content);
 
             if(!segments.success) {
-                toast.error("Failed to save book segments");
-                throw new Error("Failed to save book segments");
+                toast.error("Failed to prepare training content");
+                throw new Error("Failed to prepare training content");
             }
 
             form.reset();
@@ -136,13 +131,11 @@ const UploadForm = () => {
         } catch (error) {
             console.error(error);
 
-            toast.error("Failed to upload book. Please try again later.");
+            toast.error("Failed to create module. Please try again later.");
         } finally {
             setIsSubmitting(false);
         }
     };
-
-    if (!isMounted) return null;
 
     return (
         <>
@@ -155,11 +148,11 @@ const UploadForm = () => {
                         <FileUploader
                             control={form.control}
                             name="pdfFile"
-                            label="Book PDF File"
+                            label="Training source PDF"
                             acceptTypes={ACCEPTED_PDF_TYPES}
                             icon={Upload}
-                            placeholder="Click to upload PDF"
-                            hint="PDF file (max 50MB)"
+                            placeholder="Upload handbook, SOP, or workflow PDF"
+                            hint="PDF file, up to 50MB"
                             disabled={isSubmitting}
                         />
 
@@ -167,11 +160,11 @@ const UploadForm = () => {
                         <FileUploader
                             control={form.control}
                             name="coverImage"
-                            label="Cover Image (Optional)"
+                            label="Module thumbnail (optional)"
                             acceptTypes={ACCEPTED_IMAGE_TYPES}
                             icon={ImageIcon}
-                            placeholder="Click to upload cover image"
-                            hint="Leave empty to auto-generate from PDF"
+                            placeholder="Upload a visual for this module"
+                            hint="Leave empty to use the first PDF page"
                             disabled={isSubmitting}
                         />
 
@@ -181,11 +174,11 @@ const UploadForm = () => {
                             name="title"
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel className="form-label">Title</FormLabel>
+                                    <FormLabel className="form-label">Module title</FormLabel>
                                     <FormControl>
                                         <Input
                                             className="form-input"
-                                            placeholder="ex: Rich Dad Poor Dad"
+                                            placeholder="ex: Agency Intern Onboarding"
                                             {...field}
                                             disabled={isSubmitting}
                                         />
@@ -201,11 +194,11 @@ const UploadForm = () => {
                             name="author"
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel className="form-label">Author Name</FormLabel>
+                                    <FormLabel className="form-label">Source owner or team</FormLabel>
                                     <FormControl>
                                         <Input
                                             className="form-input"
-                                            placeholder="ex: Robert Kiyosaki"
+                                            placeholder="ex: Operations Team"
                                             {...field}
                                             disabled={isSubmitting}
                                         />
@@ -221,7 +214,7 @@ const UploadForm = () => {
                             name="persona"
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel className="form-label">Choose Assistant Voice</FormLabel>
+                                    <FormLabel className="form-label">Trainer voice</FormLabel>
                                     <FormControl>
                                         <VoiceSelector
                                             value={field.value}
@@ -236,7 +229,7 @@ const UploadForm = () => {
 
                         {/* 6. Submit Button */}
                         <Button type="submit" className="form-btn" disabled={isSubmitting}>
-                            Begin Synthesis
+                            Create training module
                         </Button>
                     </form>
                 </Form>

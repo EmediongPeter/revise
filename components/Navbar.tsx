@@ -1,14 +1,14 @@
 'use client';
 
 import Link from "next/link";
-import Image from "next/image";
 import {usePathname} from "next/navigation";
 import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from "@clerk/nextjs";
 import {cn} from "@/lib/utils";
+import {FileText, LayoutDashboard, Sparkles} from "lucide-react";
 
 const navItems = [
-    { label: "Library", href: "/" },
-    { label: "Add New", href: "/books/new" },
+    { label: "Dashboard", href: "/" },
+    { label: "New module", href: "/books/new" },
     { label: "Pricing", href: "/subscriptions" },
 ]
 
@@ -17,30 +17,39 @@ const Navbar = () => {
     const { user } = useUser();
 
     return (
-        <header className="w-full fixed z-50 bg-(--bg-primary)">
+        <header className="w-full fixed z-50 border-b border-[var(--border-subtle)] bg-[rgba(247,248,251,0.86)] backdrop-blur-xl">
             <div className="wrapper navbar-height py-4 flex justify-between items-center">
-                <Link href="/" className="flex gap-0.5 items-center">
-                    <Image src="/assets/logo.png" alt="Bookfied" width={42} height={26} />
-                    <span className="logo-text">Bookified</span>
+                <Link href="/" className="flex items-center gap-3">
+                    <div className="flex size-9 items-center justify-center rounded-lg bg-[var(--accent-warm)] text-white shadow-[0_8px_24px_rgba(37,99,235,0.22)]">
+                        <Sparkles className="size-4" />
+                    </div>
+                    <span className="logo-text">Revise</span>
                 </Link>
 
-                <nav className="w-fit flex gap-7.5 items-center">
+                <nav className="w-fit flex items-center gap-2 sm:gap-3">
                     {navItems.map(({ label, href }) => {
                         const isActive = pathName === href || (href !== '/' && pathName.startsWith(href));
 
                         return (
-                            <Link href={href} key={label} className={cn('nav-link-base', isActive ? 'nav-link-active' : 'text-black hover:opacity-70')}>
-                                {label}
+                            <Link href={href} key={label} className={cn('nav-link-base', isActive ? 'nav-link-active' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]')}>
+                                {label === "Dashboard" && <LayoutDashboard className="size-4 sm:hidden" />}
+                                {label === "New module" && <FileText className="size-4 sm:hidden" />}
+                                <span className="hidden sm:inline">{label}</span>
+                                <span className="sr-only sm:hidden">{label}</span>
                             </Link>
                         )
                     })}
 
-                    <div className="flex gap-7.5 items-center">
+                    <div className="ml-2 flex items-center">
                         <SignedOut>
-                            <SignInButton mode="modal" />
+                            <SignInButton mode="modal">
+                                <button className="rounded-lg bg-[var(--accent-warm)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--accent-warm-hover)]">
+                                    Sign in
+                                </button>
+                            </SignInButton>
                         </SignedOut>
                         <SignedIn>
-                            <div className="nav-user-link">
+                            <div className="nav-user-link rounded-full border border-[var(--border-subtle)] bg-white px-2 py-1 shadow-sm">
                                 <UserButton />
                                 {user?.firstName && (
                                     <Link href="/subscriptions" className="nav-user-name">

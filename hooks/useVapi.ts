@@ -252,7 +252,7 @@ export function useVapi(book: IBook) {
             // Note: Server-returned maxDurationMinutes is informational only
             // The actual limit is enforced by useLatestRef(limits.maxSessionMinutes * 60)
 
-            const firstMessage = `Hey, good to meet you. Quick question before we dive in - have you actually read ${book.title} yet, or are we starting fresh?`;
+            const firstMessage = `Hey, welcome to your ${book.title} practice session. I will use the uploaded company material to coach you through realistic onboarding scenarios. To begin, tell me what you already know about this process.`;
 
             await getVapi().start(ASSISTANT_ID, {
                 firstMessage,

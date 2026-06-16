@@ -1,6 +1,6 @@
 // Brand color - used in JS files where CSS variables aren't available
-export const BRAND_COLOR = '#212a3b'; // Dark blue-gray
-export const BRAND_COLOR_HOVER = '#3d485e'; // Medium blue-gray
+export const BRAND_COLOR = '#2563eb';
+export const BRAND_COLOR_HOVER = '#1d4ed8';
 
 // Sample books for the homepage (using Open Library covers)
 export const sampleBooks = [
@@ -154,17 +154,17 @@ export const VAPI_DASHBOARD_CONFIG = {
 export const CLERK_AUTH_APPEARANCE_OVERRIDE = {
     rootBox: 'mx-auto',
     card: 'shadow-none border-none rounded-xl bg-transparent',
-    headerTitle: '!text-2xl font-bold text-[#212a3b]',
-    headerSubtitle: '!mt-3 !text-sm text-[#3d485e]',
+    headerTitle: '!text-2xl font-bold text-[#111827]',
+    headerSubtitle: '!mt-3 !text-sm text-[#6b7280]',
     socialButtonsBlockButton:
-        '!border border-[rgba(33,42,59,0.12)] hover:bg-[#212a3b]/10 transition-all h-12 text-lg !rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.08)]',
-    socialButtonsBlockButtonText: 'font-medium !text-[#212a3b] !text-lg',
+        '!border border-[rgba(17,24,39,0.1)] hover:bg-[#eff6ff] transition-all h-12 text-lg !rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_24px_rgba(15,23,42,0.06)]',
+    socialButtonsBlockButtonText: 'font-medium !text-[#111827] !text-lg',
     formButtonPrimary:
-        'bg-[#212a3b] hover:bg-[#3d485e] text-white font-medium !border-0 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.08)] normal-case !h-12 !text-lg !rounded-xl',
+        'bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-medium !border-0 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_24px_rgba(15,23,42,0.06)] normal-case !h-12 !text-lg !rounded-xl',
     formFieldInput:
-        '!border !border-[rgba(33,42,59,0.12)] !rounded-xl focus:ring-[#212a3b] focus:border-[#212a3b] !h-12 !min-h-12 !text-lg !bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_3px_rgba(0,0,0,0.06)]',
-    formFieldLabel: 'text-[#212a3b] font-medium text-lg',
-    footerActionLink: 'text-[#212a3b] hover:text-[#3d485e] text-base font-medium',
+        '!border !border-[rgba(17,24,39,0.1)] !rounded-xl focus:ring-[#2563eb] focus:border-[#2563eb] !h-12 !min-h-12 !text-lg !bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)]',
+    formFieldLabel: 'text-[#111827] font-medium text-lg',
+    footerActionLink: 'text-[#2563eb] hover:text-[#1d4ed8] text-base font-medium',
 };
 
 
