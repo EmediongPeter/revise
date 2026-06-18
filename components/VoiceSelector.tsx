@@ -36,13 +36,13 @@ const VoiceSelector = ({ value, onChange, disabled, className }: VoiceSelectorPr
                                         <div className="flex items-center gap-2">
                                             <div className={cn(
                                                 "w-4 h-4 rounded-full border flex items-center justify-center",
-                                                isSelected ? "border-[var(--accent-warm)]" : "border-gray-300"
+                                                isSelected ? "border-[var(--text-primary)]" : "border-[var(--border-medium)]"
                                             )}>
-                                                {isSelected && <div className="w-2 h-2 rounded-full bg-[var(--accent-warm)]" />}
+                                                {isSelected && <div className="w-2 h-2 rounded-full bg-[var(--text-primary)]" />}
                                             </div>
                                             <span className="font-semibold text-[var(--text-primary)]">{voice.name}</span>
                                         </div>
-                                        <p className="text-xs text-[#777] leading-relaxed">
+                                        <p className="text-xs text-[var(--text-muted)] leading-relaxed">
                                             {voice.description}
                                         </p>
                                     </div>
@@ -72,13 +72,13 @@ const VoiceSelector = ({ value, onChange, disabled, className }: VoiceSelectorPr
                                         <div className="flex items-center gap-2">
                                             <div className={cn(
                                                 "w-4 h-4 rounded-full border flex items-center justify-center",
-                                                isSelected ? "border-[var(--accent-warm)]" : "border-gray-300"
+                                                isSelected ? "border-[var(--text-primary)]" : "border-[var(--border-medium)]"
                                             )}>
-                                                {isSelected && <div className="w-2 h-2 rounded-full bg-[var(--accent-warm)]" />}
+                                                {isSelected && <div className="w-2 h-2 rounded-full bg-[var(--text-primary)]" />}
                                             </div>
                                             <span className="font-semibold text-[var(--text-primary)]">{voice.name}</span>
                                         </div>
-                                        <p className="text-xs text-[#777] leading-relaxed">
+                                        <p className="text-xs text-[var(--text-muted)] leading-relaxed">
                                             {voice.description}
                                         </p>
                                     </div>

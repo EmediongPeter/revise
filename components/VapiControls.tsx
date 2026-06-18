@@ -60,7 +60,7 @@ const VapiControls = ({ book }: { book: IBook }) => {
                         />
                         <div className="vapi-mic-wrapper relative">
                             {isActive && (status === 'speaking' || status === 'thinking') && (
-                                <div className="absolute inset-0 rounded-full bg-white animate-ping opacity-75" />
+                                <div className="absolute inset-0 rounded-full bg-[var(--text-primary)] animate-ping opacity-30" />
                             )}
                             <button
                                 onClick={isActive ? stop : start}
@@ -68,7 +68,7 @@ const VapiControls = ({ book }: { book: IBook }) => {
                                 className={`vapi-mic-btn shadow-md !w-[60px] !h-[60px] z-10 ${isActive ? 'vapi-mic-btn-active' : 'vapi-mic-btn-inactive'}`}
                             >
                                 {isActive ? (
-                                    <Mic className="size-7 text-white" />
+                                    <Mic className="size-7 text-[var(--text-inverse)]" />
                                 ) : (
                                     <MicOff className="size-7 text-[var(--text-primary)]" />
                                 )}
@@ -78,7 +78,7 @@ const VapiControls = ({ book }: { book: IBook }) => {
 
                     <div className="flex flex-col gap-4 flex-1">
                         <div>
-                            <p className="mb-2 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--accent-warm)]">Voice practice</p>
+                            <p className="mb-2 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Voice practice</p>
                             <h1 className="text-2xl sm:text-3xl font-semibold text-[var(--text-primary)] mb-1">
                                 {book.title}
                             </h1>
@@ -92,12 +92,12 @@ const VapiControls = ({ book }: { book: IBook }) => {
                             </div>
 
                             <div className="vapi-status-indicator">
-                                <ShieldCheck className="size-4 text-[var(--accent-warm)]" />
+                                <ShieldCheck className="size-4 text-[var(--text-primary)]" />
                                 <span className="vapi-status-text">Grounded in uploaded docs</span>
                             </div>
 
                             <div className="vapi-status-indicator">
-                                <Clock3 className="size-4 text-[var(--accent-warm)]" />
+                                <Clock3 className="size-4 text-[var(--text-primary)]" />
                                 <span className="vapi-status-text">
                                     {formatDuration(duration)}/{formatDuration(maxDurationSeconds)}
                                 </span>
@@ -122,8 +122,8 @@ const VapiControls = ({ book }: { book: IBook }) => {
                             "Ask for a scenario when you want practice.",
                             "Revise will correct you using the uploaded source.",
                         ].map((item) => (
-                            <div key={item} className="flex gap-3 rounded-xl border border-[var(--border-subtle)] bg-white p-4 shadow-sm">
-                                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                            <div key={item} className="flex gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-sm">
+                                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-[var(--success)]" />
                                 <p className="text-sm leading-5 text-[var(--text-secondary)]">{item}</p>
                             </div>
                         ))}

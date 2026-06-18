@@ -1,10 +1,17 @@
-import React from 'react'
 import HeroSection from "@/components/HeroSection";
 import BookCard from "@/components/BookCard";
 import {getAllBooks} from "@/lib/actions/book.actions";
 import Search from "@/components/Search";
 import Link from "next/link";
-import {ArrowUpRight, ClipboardCheck, FileText, MessageSquareText, UsersRound} from "lucide-react";
+import { EmptyState, MetricCard, PageHeader } from "@/components/dashboard/DashboardPrimitives";
+import {
+    BookOpenCheck,
+    ClipboardCheck,
+    FileText,
+    MessageSquareText,
+    TriangleAlert,
+    UsersRound
+} from "lucide-react";
 
 const Page = async ({ searchParams }: { searchParams: Promise<{ query?: string }> }) => {
     const { query } = await searchParams;
@@ -15,28 +22,40 @@ const Page = async ({ searchParams }: { searchParams: Promise<{ query?: string }
 
     return (
         <main className="wrapper container">
+            <PageHeader
+                eyebrow="Overview"
+                title="Training operations"
+                description="Track modules, readiness, trainee risk, and source-backed voice practice for your onboarding workspace."
+                actions={
+                    <>
+                    <Link href="/trainees" className="dashboard-secondary-action">
+                        <UsersRound className="size-4" />
+                        Invite trainee
+                    </Link>
+                    <Link href="/books/new" className="dashboard-primary-action">
+                        <FileText className="size-4" />
+                        Upload source
+                    </Link>
+                    </>
+                }
+            />
+
             <HeroSection />
 
             <section className="mb-8 grid gap-3 md:grid-cols-4">
                 {[
                     { label: "Training modules", value: books.length, icon: ClipboardCheck },
-                    { label: "Source segments", value: totalSegments, icon: FileText },
+                    { label: "Source chunks", value: totalSegments, icon: BookOpenCheck },
                     { label: "Voice sessions", value: "Ready", icon: MessageSquareText },
-                    { label: "Trainees", value: "Invite next", icon: UsersRound },
+                    { label: "Open risks", value: "4", icon: TriangleAlert },
                 ].map((item) => (
-                    <div key={item.label} className="rounded-xl border border-[var(--border-subtle)] bg-white p-4 shadow-sm">
-                        <div className="mb-3 flex size-9 items-center justify-center rounded-lg bg-blue-50 text-[var(--accent-warm)]">
-                            <item.icon className="size-4" />
-                        </div>
-                        <p className="text-2xl font-semibold text-[var(--text-primary)]">{item.value}</p>
-                        <p className="mt-1 text-sm text-[var(--text-muted)]">{item.label}</p>
-                    </div>
+                    <MetricCard key={item.label} label={item.label} value={item.value} icon={item.icon} />
                 ))}
             </section>
 
-            <div className="mb-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+            <div className="mb-6 grid gap-4 lg:grid-cols-[1fr_340px]">
                 <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--accent-warm)]">Workspace</p>
+                    <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Workspace</p>
                     <h2 className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">Training modules</h2>
                     <p className="mt-1 text-sm text-[var(--text-muted)]">Each module is powered by uploaded company material and can be practiced by voice.</p>
                 </div>
@@ -50,19 +69,12 @@ const Page = async ({ searchParams }: { searchParams: Promise<{ query?: string }
                     ))}
                 </div>
             ) : (
-                <section className="rounded-2xl border border-dashed border-[var(--border-medium)] bg-white p-10 text-center shadow-sm">
-                    <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-blue-50 text-[var(--accent-warm)]">
-                        <FileText className="size-5" />
-                    </div>
-                    <h3 className="text-xl font-semibold text-[var(--text-primary)]">Create your first training module</h3>
-                    <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
-                        Start with one onboarding PDF, SOP, or internal guide. Revise will turn it into a voice practice experience for new hires.
-                    </p>
-                    <Link href="/books/new" className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[var(--accent-warm)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--accent-warm-hover)]">
-                        Create module
-                        <ArrowUpRight className="size-4" />
-                    </Link>
-                </section>
+                <EmptyState
+                    icon={FileText}
+                    title="Upload your first company source"
+                    description="Start with one onboarding PDF, SOP, or internal guide. Revise will prepare it for voice practice and suggested training modules."
+                    action={{ label: "Upload source", href: "/books/new" }}
+                />
             )}
         </main>
     )

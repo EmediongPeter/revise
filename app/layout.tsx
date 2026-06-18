@@ -5,6 +5,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import Navbar from "@/components/Navbar";
 import "./globals.css";
 import {Toaster} from "@/components/ui/sonner";
+import ThemeProvider from "@/components/ThemeProvider";
 
 const ibmPlexSerif = IBM_Plex_Serif({
     variable: "--font-ibm-plex-serif",
@@ -31,13 +32,15 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-        <html lang="en">
+        <html lang="en" suppressHydrationWarning>
           <body
             className={`${ibmPlexSerif.variable} ${monaSans.variable} relative font-sans antialiased`}
           >
-            <Navbar />
-            {children}
-            <Toaster />
+            <ThemeProvider>
+              <Navbar />
+              {children}
+              <Toaster />
+            </ThemeProvider>
           </body>
         </html>
     </ClerkProvider>

@@ -229,7 +229,7 @@ const UploadForm = () => {
 
                         {/* 6. Submit Button */}
                         <Button type="submit" className="form-btn" disabled={isSubmitting}>
-                            Create training module
+                            Upload source
                         </Button>
                     </form>
                 </Form>
