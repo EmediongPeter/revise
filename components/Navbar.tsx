@@ -578,7 +578,7 @@ const SidebarContent = ({
     }, [updateScrollThumb]);
 
     return (
-        <div className="relative flex h-full flex-col overflow-hidden">
+        <div className="relative flex h-full flex-col overflow-visible">
             <div
                 ref={scrollRef}
                 onScroll={handleSidebarScroll}
@@ -664,12 +664,11 @@ const SidebarContent = ({
             {scrollState.scrollable && !sidebarMenuOpen && (
                 <div
                     className={cn(
-                        "pointer-events-none fixed z-40 w-[3px] rounded-full bg-[#d97757] shadow-[0_0_10px_rgba(217,119,87,0.35)] transition-opacity duration-200",
+                        "pointer-events-none absolute -right-[11px] z-10 w-[3px] rounded-full bg-[#d97757] shadow-[0_0_10px_rgba(217,119,87,0.35)] transition-opacity duration-200",
                         scrollState.visible ? "opacity-90" : "opacity-0",
                     )}
                     style={{
-                        left: "calc(var(--sidebar-width) - 2px)",
-                        top: scrollState.viewportTop + scrollState.top + 8,
+                        top: scrollState.top + 8,
                         height: scrollState.height,
                     }}
                 />
@@ -706,6 +705,7 @@ const SidebarContent = ({
 };
 
 const Navbar = () => {
+    const pathName = usePathname();
     const [isOpen, setIsOpen] = useState(false);
     const [railHintVisible, setRailHintVisible] = useState(false);
     const collapsed = collapsedStore.useValue() === "true";
@@ -760,6 +760,8 @@ const Navbar = () => {
         event.currentTarget.releasePointerCapture(event.pointerId);
     };
 
+    if (pathName.startsWith("/onboarding")) return null;
+
     return (
         <>
             <aside
@@ -778,7 +780,7 @@ const Navbar = () => {
                     onPointerDown={handleResizePointerDown}
                     onPointerMove={handleResizePointerMove}
                     onPointerUp={handleResizePointerUp}
-                    className="group absolute -right-1 top-0 h-full w-2 cursor-col-resize bg-transparent transition hover:bg-[#d97757]/35"
+                    className="group absolute -right-1 top-0 z-[60] h-full w-2 cursor-col-resize bg-transparent transition hover:bg-[#d97757]/35"
                 />
                 <button
                     type="button"
@@ -786,7 +788,7 @@ const Navbar = () => {
                     onMouseEnter={() => setRailHintVisible(true)}
                     onMouseLeave={() => setRailHintVisible(false)}
                     onClick={() => setCollapsed(true)}
-                    className="absolute -right-3 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-muted)] shadow-[var(--shadow-soft-sm)] transition hover:border-[#d97757]/50 hover:text-[var(--text-primary)]"
+                    className="absolute -right-3 top-1/2 z-[70] flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-muted)] shadow-[var(--shadow-soft-sm)] transition hover:border-[#d97757]/50 hover:text-[var(--text-primary)]"
                 >
                     <ChevronLeft className="size-3.5" />
                 </button>

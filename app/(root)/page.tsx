@@ -3,6 +3,7 @@ import BookCard from "@/components/BookCard";
 import {getAllBooks} from "@/lib/actions/book.actions";
 import Search from "@/components/Search";
 import Link from "next/link";
+import DashboardRevealGate from "@/components/dashboard/DashboardRevealGate";
 import { EmptyState, MetricCard, PageHeader } from "@/components/dashboard/DashboardPrimitives";
 import {
     BookOpenCheck,
@@ -21,62 +22,70 @@ const Page = async ({ searchParams }: { searchParams: Promise<{ query?: string }
     const totalSegments = books.reduce((acc, book) => acc + (book.totalSegments || 0), 0);
 
     return (
-        <main className="wrapper container">
-            <PageHeader
-                eyebrow="Overview"
-                title="Training operations"
-                description="Track modules, readiness, trainee risk, and source-backed voice practice for your onboarding workspace."
-                actions={
-                    <>
-                    <Link href="/trainees" className="dashboard-secondary-action">
-                        <UsersRound className="size-4" />
-                        Invite trainee
-                    </Link>
-                    <Link href="/books/new" className="dashboard-primary-action">
-                        <FileText className="size-4" />
-                        Upload source
-                    </Link>
-                    </>
-                }
-            />
-
-            <HeroSection />
-
-            <section className="mb-8 grid gap-3 md:grid-cols-4">
-                {[
-                    { label: "Training modules", value: books.length, icon: ClipboardCheck },
-                    { label: "Source chunks", value: totalSegments, icon: BookOpenCheck },
-                    { label: "Voice sessions", value: "Ready", icon: MessageSquareText },
-                    { label: "Open risks", value: "4", icon: TriangleAlert },
-                ].map((item) => (
-                    <MetricCard key={item.label} label={item.label} value={item.value} icon={item.icon} />
-                ))}
-            </section>
-
-            <div className="mb-6 grid gap-4 lg:grid-cols-[1fr_340px]">
-                <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Workspace</p>
-                    <h2 className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">Training modules</h2>
-                    <p className="mt-1 text-sm text-[var(--text-muted)]">Each module is powered by uploaded company material and can be practiced by voice.</p>
+        <DashboardRevealGate>
+            <main className="wrapper container">
+                <div className="dashboard-reveal-item">
+                    <PageHeader
+                        eyebrow="Overview"
+                        title="Training operations"
+                        description="Track modules, readiness, trainee risk, and source-backed voice practice for your onboarding workspace."
+                        actions={
+                            <>
+                            <Link href="/trainees" className="dashboard-secondary-action">
+                                <UsersRound className="size-4" />
+                                Invite trainee
+                            </Link>
+                            <Link href="/books/new" className="dashboard-primary-action">
+                                <FileText className="size-4" />
+                                Upload source
+                            </Link>
+                            </>
+                        }
+                    />
                 </div>
-                <Search />
-            </div>
 
-            {books.length > 0 ? (
-                <div className="library-books-grid">
-                    {books.map((book) => (
-                        <BookCard key={book._id} title={book.title} author={book.author} coverURL={book.coverURL} slug={book.slug} />
+                <div className="dashboard-reveal-item">
+                    <HeroSection />
+                </div>
+
+                <section className="dashboard-reveal-item mb-8 grid gap-3 md:grid-cols-4">
+                    {[
+                        { label: "Training modules", value: books.length, icon: ClipboardCheck },
+                        { label: "Source chunks", value: totalSegments, icon: BookOpenCheck },
+                        { label: "Voice sessions", value: "Ready", icon: MessageSquareText },
+                        { label: "Open risks", value: "4", icon: TriangleAlert },
+                    ].map((item) => (
+                        <MetricCard key={item.label} label={item.label} value={item.value} icon={item.icon} />
                     ))}
+                </section>
+
+                <div className="dashboard-reveal-item mb-6 grid gap-4 lg:grid-cols-[1fr_340px]">
+                    <div>
+                        <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Workspace</p>
+                        <h2 className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">Training modules</h2>
+                        <p className="mt-1 text-sm text-[var(--text-muted)]">Each module is powered by uploaded company material and can be practiced by voice.</p>
+                    </div>
+                    <Search />
                 </div>
-            ) : (
-                <EmptyState
-                    icon={FileText}
-                    title="Upload your first company source"
-                    description="Start with one onboarding PDF, SOP, or internal guide. Revise will prepare it for voice practice and suggested training modules."
-                    action={{ label: "Upload source", href: "/books/new" }}
-                />
-            )}
-        </main>
+
+                <div className="dashboard-reveal-item">
+                    {books.length > 0 ? (
+                        <div className="library-books-grid">
+                            {books.map((book) => (
+                                <BookCard key={book._id} title={book.title} author={book.author} coverURL={book.coverURL} slug={book.slug} />
+                            ))}
+                        </div>
+                    ) : (
+                        <EmptyState
+                            icon={FileText}
+                            title="Upload your first company source"
+                            description="Start with one onboarding PDF, SOP, or internal guide. Revise will prepare it for voice practice and suggested training modules."
+                            action={{ label: "Upload source", href: "/books/new" }}
+                        />
+                    )}
+                </div>
+            </main>
+        </DashboardRevealGate>
     )
 }
 
