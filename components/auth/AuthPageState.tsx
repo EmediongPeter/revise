@@ -9,6 +9,7 @@ const AuthPageState = () => {
 
         return () => {
             delete document.documentElement.dataset.authPage;
+            delete document.documentElement.dataset.sidebarCollapsed;
         };
     }, []);
 

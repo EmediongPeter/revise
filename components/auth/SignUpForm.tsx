@@ -277,8 +277,8 @@ const SignUpForm = () => {
             </Button>
             {error && <p className={errorClass}>{error}</p>}
             <p className="px-4 pt-6 text-center text-[14px] font-medium leading-6 text-[var(--text-muted)]">
-                By signing up, you agree to our <span className="font-semibold text-[var(--text-primary)]">Terms of Service</span> and{" "}
-                <span className="font-semibold text-[var(--text-primary)]">Data Processing Agreement</span>.
+                By signing up, you agree to our <span>Terms of Service</span> and{" "}
+                <span>Data Processing Agreement</span>.
             </p>
             <p className="text-center text-[14px] font-medium text-[var(--text-muted)]">
                 Already have an account?{" "}

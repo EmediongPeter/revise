@@ -1,6 +1,7 @@
 'use server';
 
 import { auth, clerkClient } from "@clerk/nextjs/server";
+import { randomUUID } from "crypto";
 import { Types } from "mongoose";
 import { connectToDatabase } from "@/database/mongoose";
 import Team from "@/database/models/team.model";
@@ -67,10 +68,18 @@ const generateWorkspaceSlugVariant = (baseSlug: string) => {
 };
 
 const getAvailableWorkspaceSlug = async (baseValue: string) => {
-    const baseSlug = slugifyWorkspace(baseValue);
+    const baseSlug = slugifyWorkspace(baseValue) || "workspace";
     let slug = baseSlug;
+    let retries = 0;
+    const maxRetries = 100;
 
     while (await Workspace.exists({ slug })) {
+        retries += 1;
+
+        if (retries > maxRetries) {
+            return `${baseSlug}-${randomUUID().slice(0, 8)}`;
+        }
+
         slug = generateWorkspaceSlugVariant(baseSlug);
     }
 
@@ -140,23 +149,7 @@ export const completeOnboarding = async (input: CompleteOnboardingInput) => {
         return { success: false, error: "Your account needs an email address before onboarding can continue." };
     }
 
-    const existingProfile = await UserProfile.findOne({ clerkId: userId }).lean();
-
-    if (existingProfile?.onboardingCompleted && existingProfile.activeWorkspaceId) {
-        const existingWorkspace = await Workspace.findById(existingProfile.activeWorkspaceId).lean();
-
-        return {
-            success: true,
-            data: {
-                alreadyCompleted: true,
-                workspaceId: existingProfile.activeWorkspaceId.toString(),
-                workspaceSlug: existingWorkspace?.slug,
-            },
-        };
-    }
-
     const workspaceName = input.workspaceName.trim();
-    const workspaceSlug = await getAvailableWorkspaceSlug(input.workspaceSlug || workspaceName);
     const displayName =
         input.displayName.trim() ||
         user.fullName ||
@@ -164,19 +157,88 @@ export const completeOnboarding = async (input: CompleteOnboardingInput) => {
         email.split("@")[0] ||
         "Workspace owner";
 
-    const workspace = await Workspace.create({
-        name: workspaceName,
-        slug: workspaceSlug,
-        avatarSeed: workspaceSlug,
-        industry: input.industry,
-        ownerClerkId: userId,
-        createdByClerkId: userId,
-        trainingGoals: input.trainingGoals,
-        googleDriveConnected: input.googleDriveConnected,
-        uploadedSourceName: input.uploadedSourceName,
-    });
+    const profile = await UserProfile.findOneAndUpdate(
+        { clerkId: userId },
+        {
+            $setOnInsert: {
+                clerkId: userId,
+                email: email.toLowerCase(),
+                displayName,
+                onboardingCompleted: false,
+            },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
 
-    const workspaceId = workspace._id as Types.ObjectId;
+    if (profile.onboardingCompleted && profile.activeWorkspaceId) {
+        const existingWorkspace = await Workspace.findById(profile.activeWorkspaceId).lean();
+
+        return {
+            success: true,
+            data: {
+                alreadyCompleted: true,
+                workspaceId: profile.activeWorkspaceId.toString(),
+                workspaceSlug: existingWorkspace?.slug,
+            },
+        };
+    }
+
+    const workspaceSlug = await getAvailableWorkspaceSlug(input.workspaceSlug || workspaceName);
+    const workspaceId = new Types.ObjectId();
+
+    const reservedProfile = await UserProfile.findOneAndUpdate(
+        {
+            clerkId: userId,
+            onboardingCompleted: { $ne: true },
+            activeWorkspaceId: { $exists: false },
+        },
+        { $set: { activeWorkspaceId: workspaceId } },
+        { new: true },
+    );
+
+    if (!reservedProfile) {
+        const existingProfile = await UserProfile.findOne({ clerkId: userId }).lean();
+        const existingWorkspace = existingProfile?.activeWorkspaceId
+            ? await Workspace.findById(existingProfile.activeWorkspaceId).lean()
+            : null;
+
+        if (!existingWorkspace) {
+            return { success: false, error: "Your workspace setup is already in progress. Please wait a moment and try again." };
+        }
+
+        return {
+            success: true,
+            data: {
+                alreadyCompleted: true,
+                workspaceId: existingProfile?.activeWorkspaceId?.toString(),
+                workspaceSlug: existingWorkspace?.slug,
+            },
+        };
+    }
+
+    let workspace;
+
+    try {
+        workspace = await Workspace.create({
+            _id: workspaceId,
+            name: workspaceName,
+            slug: workspaceSlug,
+            avatarSeed: workspaceSlug,
+            industry: input.industry,
+            ownerClerkId: userId,
+            createdByClerkId: userId,
+            trainingGoals: input.trainingGoals,
+            googleDriveConnected: input.googleDriveConnected,
+            uploadedSourceName: input.uploadedSourceName,
+        });
+    } catch (error) {
+        await UserProfile.findOneAndUpdate(
+            { clerkId: userId, activeWorkspaceId: workspaceId, onboardingCompleted: { $ne: true } },
+            { $unset: { activeWorkspaceId: "" } },
+        );
+        console.error("Failed to create onboarding workspace", error);
+        return { success: false, error: "We could not create your workspace. Please try again." };
+    }
 
     await UserProfile.findOneAndUpdate(
         { clerkId: userId },

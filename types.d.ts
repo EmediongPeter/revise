@@ -50,7 +50,7 @@ export interface IVoiceSession extends Document {
 }
 
 export interface IUserProfile extends Document {
-    _id: string;
+    _id: Types.ObjectId;
     clerkId: string;
     email: string;
     firstName?: string;
@@ -65,7 +65,7 @@ export interface IUserProfile extends Document {
 }
 
 export interface IWorkspace extends Document {
-    _id: string;
+    _id: Types.ObjectId;
     name: string;
     slug: string;
     avatarSeed?: string;
@@ -83,7 +83,7 @@ export type WorkspaceMemberRole = "owner" | "admin" | "trainer" | "member";
 export type WorkspaceMemberStatus = "active" | "invited" | "removed";
 
 export interface IWorkspaceMember extends Document {
-    _id: string;
+    _id: Types.ObjectId;
     workspaceId: Types.ObjectId;
     clerkId?: string;
     email: string;
@@ -96,7 +96,7 @@ export interface IWorkspaceMember extends Document {
 }
 
 export interface ITeam extends Document {
-    _id: string;
+    _id: Types.ObjectId;
     workspaceId: Types.ObjectId;
     name: string;
     description?: string;

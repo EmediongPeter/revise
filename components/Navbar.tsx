@@ -56,6 +56,22 @@ const defaultWorkspace: WorkspaceState = {
     avatarSeed: "agency-onboarding",
 };
 
+const nonWorkspaceRouteSegments = new Set([
+    "auth",
+    "books",
+    "knowledge",
+    "modules",
+    "onboarding",
+    "reports",
+    "sessions",
+    "settings",
+    "sign-in",
+    "sign-up",
+    "sso-callback",
+    "subscriptions",
+    "trainees",
+]);
+
 const teams = [
     { name: "Client success", accent: "bg-[#d97757]" },
     { name: "Operations", accent: "bg-zinc-400" },
@@ -136,7 +152,8 @@ const titleFromSlug = (slug: string) =>
         .join(" ");
 
 const getWorkspaceFromPath = (pathName: string): WorkspaceState => {
-    const slug = pathName.split("/").filter(Boolean)[0] || defaultWorkspace.slug;
+    const firstSegment = pathName.split("/").filter(Boolean)[0];
+    const slug = firstSegment && !nonWorkspaceRouteSegments.has(firstSegment) ? firstSegment : defaultWorkspace.slug;
 
     return {
         name: titleFromSlug(slug) || defaultWorkspace.name,
