@@ -578,7 +578,7 @@ const SidebarContent = ({
     }, [updateScrollThumb]);
 
     return (
-        <div className="relative flex h-full flex-col overflow-hidden">
+        <div className="relative flex h-full flex-col overflow-visible">
             <div
                 ref={scrollRef}
                 onScroll={handleSidebarScroll}
@@ -664,7 +664,7 @@ const SidebarContent = ({
             {scrollState.scrollable && !sidebarMenuOpen && (
                 <div
                     className={cn(
-                        "pointer-events-none absolute -right-[1px] z-10 w-[3px] rounded-full bg-[#d97757] shadow-[0_0_10px_rgba(217,119,87,0.35)] transition-opacity duration-200",
+                        "pointer-events-none absolute -right-[11px] z-10 w-[3px] rounded-full bg-[#d97757] shadow-[0_0_10px_rgba(217,119,87,0.35)] transition-opacity duration-200",
                         scrollState.visible ? "opacity-90" : "opacity-0",
                     )}
                     style={{
