@@ -2,23 +2,23 @@
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import { gsap } from "gsap";
 import { ArrowRight, Camera, Check, FileText, Link2, Upload, X } from "lucide-react";
 import { FaMicrosoft } from "react-icons/fa";
 import { SiGoogledrive, SiNotion, SiSlack } from "react-icons/si";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import FullPageLoader from "@/components/FullPageLoader";
+import { completeOnboarding, connectGoogleDrive } from "@/lib/actions/onboarding.actions";
 import {
     DASHBOARD_REVEAL_KEY,
     defaultOnboardingProfile,
     industries,
     integrations,
-    ONBOARDING_COMPLETED_KEY,
-    ONBOARDING_PROFILE_KEY,
     OnboardingProfile,
     slugifyWorkspace,
     trainingGoals,
-    WORKSPACE_KEY,
 } from "@/lib/onboarding";
 
 type StepId = "welcome" | "workspace" | "profile" | "training" | "source" | "invite" | "integrations" | "updates";
@@ -45,10 +45,10 @@ const steps: { id: StepId; skippable: boolean }[] = [
 
 const profileDefaults: ExtendedProfile = {
     ...defaultOnboardingProfile,
-    displayName: "Manager",
+    displayName: "",
     profileImageName: "",
-    updates: true,
-    onboardingTips: true,
+    updates: false,
+    onboardingTips: false,
     otherTrainingGoal: "",
     uploadedSourceName: "",
 };
@@ -62,17 +62,12 @@ const integrationIcons = {
 
 const suggestedRoles = ["Founder", "HR lead", "Operations manager", "Team lead", "Trainer"];
 
-const getStoredProfile = () => {
-    if (typeof window === "undefined") return profileDefaults;
+const splitDisplayName = (value: string) => {
+    const parts = value.trim().split(/\s+/).filter(Boolean);
+    const firstName = parts[0] || "";
+    const lastName = parts.slice(1).join(" ");
 
-    const savedProfile = window.localStorage.getItem(ONBOARDING_PROFILE_KEY);
-    if (!savedProfile) return profileDefaults;
-
-    try {
-        return { ...profileDefaults, ...JSON.parse(savedProfile) };
-    } catch {
-        return profileDefaults;
-    }
+    return { firstName, lastName };
 };
 
 const FieldLabel = ({ children }: { children: React.ReactNode }) => (
@@ -157,11 +152,15 @@ const ToggleRow = ({
 
 const OnboardingExperience = () => {
     const router = useRouter();
+    const { user } = useUser();
     const [stepIndex, setStepIndex] = useState(0);
-    const [profile, setProfile] = useState<ExtendedProfile>(getStoredProfile);
+    const [profile, setProfile] = useState<ExtendedProfile>(profileDefaults);
     const [isFinishing, setIsFinishing] = useState(false);
+    const [isConnectingDrive, setIsConnectingDrive] = useState(false);
+    const [profileHintVisible, setProfileHintVisible] = useState(false);
     const stepRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const profileImageInputRef = useRef<HTMLInputElement>(null);
     const currentStep = steps[stepIndex];
     const isLastStep = stepIndex === steps.length - 1;
     const taskRequirements: Partial<Record<StepId, string>> = {
@@ -175,6 +174,18 @@ const OnboardingExperience = () => {
     useEffect(() => {
         document.documentElement.dataset.sidebarCollapsed = "true";
     }, []);
+
+    useEffect(() => {
+        if (currentStep.id !== "profile") {
+            setProfileHintVisible(false);
+            return;
+        }
+
+        setProfileHintVisible(true);
+        const timeout = window.setTimeout(() => setProfileHintVisible(false), 5000);
+
+        return () => window.clearTimeout(timeout);
+    }, [currentStep.id]);
 
     useEffect(() => {
         if (!stepRef.current) return;
@@ -197,6 +208,14 @@ const OnboardingExperience = () => {
     const canContinue = useMemo(() => {
         if (currentStep.id === "workspace") {
             return profile.workspaceName.trim().length > 1 && profile.workspaceSlug.trim().length > 1;
+        }
+
+        if (currentStep.id === "profile") {
+            return (
+                profile.displayName.trim().length > 1 &&
+                profile.role.trim().length > 1 &&
+                profile.industry.trim().length > 1
+            );
         }
 
         if (currentStep.id === "training") {
@@ -226,29 +245,92 @@ const OnboardingExperience = () => {
         });
     };
 
-    const finish = () => {
+    const handleGoogleDriveConnection = async () => {
+        setIsConnectingDrive(true);
+
+        const result = await connectGoogleDrive();
+
+        setIsConnectingDrive(false);
+
+        if (!result.success) {
+            toast.error(result.error || "Could not connect Google Drive yet.");
+            return;
+        }
+
+        updateProfile({ googleDriveConnected: true });
+        toast.success("Google Drive is connected.");
+    };
+
+    const handleProfileImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file || !user) return;
+
+        try {
+            await user.setProfileImage({ file });
+            await user.reload();
+            updateProfile({ profileImageName: file.name });
+            toast.success("Profile photo updated.");
+        } catch (error) {
+            console.error("Failed to update profile photo", error);
+            toast.error("Failed to update profile photo. Please try again.");
+        }
+    };
+
+    const finish = async () => {
+        const { firstName, lastName } = splitDisplayName(profile.displayName);
         const nextProfile = {
             ...profile,
-            displayName: profile.displayName.trim() || "Manager",
-            workspaceName: profile.workspaceName.trim() || defaultOnboardingProfile.workspaceName,
+            displayName: profile.displayName.trim(),
+            workspaceName: profile.workspaceName.trim(),
             workspaceSlug: slugifyWorkspace(profile.workspaceSlug || profile.workspaceName),
-            role: profile.role.trim() || "Manager",
+            role: profile.role.trim(),
         };
 
         setIsFinishing(true);
-        window.localStorage.setItem(ONBOARDING_PROFILE_KEY, JSON.stringify(nextProfile));
-        window.localStorage.setItem(ONBOARDING_COMPLETED_KEY, "true");
-        window.localStorage.setItem(
-            WORKSPACE_KEY,
-            JSON.stringify({
-                name: nextProfile.workspaceName,
-                slug: nextProfile.workspaceSlug,
-            }),
-        );
-        window.sessionStorage.setItem(DASHBOARD_REVEAL_KEY, "true");
-        window.dispatchEvent(new Event(ONBOARDING_COMPLETED_KEY));
 
-        window.setTimeout(() => router.push("/"), 900);
+        if (user && (firstName || lastName)) {
+            try {
+                await user.update({
+                    firstName: firstName || undefined,
+                    lastName: lastName || undefined,
+                });
+                await user.reload();
+            } catch (error) {
+                console.error("Failed to update Clerk profile name", error);
+                toast.error("We could not update your account name in Clerk. Check that first and last name editing is enabled.");
+                setIsFinishing(false);
+                return;
+            }
+        }
+
+        const goals = [
+            ...nextProfile.trainingGoals,
+            ...(nextProfile.otherTrainingGoal.trim() ? [nextProfile.otherTrainingGoal.trim()] : []),
+        ];
+
+        const result = await completeOnboarding({
+            displayName: nextProfile.displayName,
+            workspaceName: nextProfile.workspaceName,
+            workspaceSlug: nextProfile.workspaceSlug,
+            industry: nextProfile.industry,
+            role: nextProfile.role,
+            trainingGoals: goals,
+            inviteEmails: nextProfile.inviteEmails,
+            googleDriveConnected: nextProfile.googleDriveConnected,
+            uploadedSourceName: nextProfile.uploadedSourceName,
+        });
+
+        if (!result.success) {
+            setIsFinishing(false);
+            toast.error(result.error || "Failed to create your workspace. Please try again.");
+            return;
+        }
+
+        window.sessionStorage.setItem(DASHBOARD_REVEAL_KEY, "true");
+
+        const workspaceSlug = result.data?.workspaceSlug || nextProfile.workspaceSlug;
+
+        router.replace(`/${workspaceSlug}`);
     };
 
     const next = () => {
@@ -340,12 +422,34 @@ const OnboardingExperience = () => {
 
                                 <div className="mt-7 grid gap-5">
                                     <div className="flex items-center gap-4">
+                                        <input
+                                            ref={profileImageInputRef}
+                                            type="file"
+                                            accept="image/png,image/jpeg,image/webp"
+                                            onChange={handleProfileImageChange}
+                                            className="hidden"
+                                        />
                                         <button
                                             type="button"
-                                            className="flex size-14 shrink-0 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-muted)] transition hover:text-[var(--text-primary)]"
-                                            onClick={() => updateProfile({ profileImageName: "Profile image selected" })}
+                                            className="group relative flex size-14 shrink-0 items-center justify-center overflow-visible rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-muted)] transition hover:text-[var(--text-primary)]"
+                                            onClick={() => profileImageInputRef.current?.click()}
+                                            onMouseEnter={() => setProfileHintVisible(true)}
+                                            onMouseLeave={() => setProfileHintVisible(false)}
                                         >
-                                            <Camera className="size-5" />
+                                            {user?.imageUrl ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={user.imageUrl} alt="" className="size-full rounded-full object-cover" />
+                                            ) : (
+                                                <Camera className="size-5" />
+                                            )}
+                                            <span
+                                                className={cn(
+                                                    "pointer-events-none absolute left-1/2 top-[calc(100%+10px)] z-10 w-max max-w-42 -translate-x-1/2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] shadow-[var(--shadow-soft-md)] transition",
+                                                    profileHintVisible ? "opacity-100" : "opacity-0",
+                                                )}
+                                            >
+                                                Add profile photo
+                                            </span>
                                         </button>
                                         <label className="min-w-0 flex-1">
                                             <FieldLabel>Name</FieldLabel>
@@ -498,10 +602,11 @@ const OnboardingExperience = () => {
                                             <button
                                                 key={integration.name}
                                                 type="button"
-                                                onClick={() => available && updateProfile({ googleDriveConnected: !profile.googleDriveConnected })}
+                                                onClick={() => available && !profile.googleDriveConnected && handleGoogleDriveConnection()}
+                                                disabled={!available || isConnectingDrive || profile.googleDriveConnected}
                                                 className={cn(
                                                     "flex w-full items-center gap-4 p-4 text-left transition first:rounded-t-2xl last:rounded-b-2xl",
-                                                    available ? "hover:bg-[var(--surface-hover)]" : "cursor-not-allowed opacity-55",
+                                                    available && !profile.googleDriveConnected ? "hover:bg-[var(--surface-hover)]" : "cursor-not-allowed opacity-55",
                                                 )}
                                             >
                                                 <span className="flex size-10 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)]">
@@ -511,12 +616,16 @@ const OnboardingExperience = () => {
                                                     <span className="flex items-center gap-2">
                                                         <span className="text-sm font-semibold text-[var(--text-primary)]">{integration.name}</span>
                                                         <span className="rounded-full border border-[var(--border-subtle)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">
-                                                            {integration.status}
+                                                            {profile.googleDriveConnected && available
+                                                                ? "Connected"
+                                                                : isConnectingDrive && available
+                                                                  ? "Connecting"
+                                                                  : integration.status}
                                                         </span>
                                                     </span>
                                                     <span className="mt-1 block text-sm leading-5 text-[var(--text-muted)]">{integration.description}</span>
                                                 </span>
-                                                {available && profile.googleDriveConnected && <Check className="size-5 text-[#d97757]" />}
+                                                {available && profile.googleDriveConnected && <Check className="size-5 text-[var(--text-primary)]" />}
                                             </button>
                                         );
                                     })}
