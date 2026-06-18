@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from "@clerk/nextjs";
+import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import ThemeToggle from "@/components/ThemeToggle";
+import WorkspaceAvatar from "@/components/WorkspaceAvatar";
+import UserMenu from "@/components/UserMenu";
 import {
     BarChart3,
     BookOpenCheck,
@@ -34,8 +36,6 @@ import { FormEvent, PointerEvent, MouseEvent as ReactMouseEvent, useCallback, us
 
 const SIDEBAR_COLLAPSED_KEY = "revise.sidebar.collapsed";
 const SIDEBAR_WIDTH_KEY = "revise.sidebar.width";
-const WORKSPACE_KEY = "revise.workspace";
-const ACTIVE_TEAM_KEY = "revise.activeTeam";
 const DEFAULT_SIDEBAR_WIDTH = 272;
 const MIN_SIDEBAR_WIDTH = 236;
 const MAX_SIDEBAR_WIDTH = 320;
@@ -47,11 +47,13 @@ const TEAM_MENU_HEIGHT = 318;
 type WorkspaceState = {
     name: string;
     slug: string;
+    avatarSeed?: string;
 };
 
 const defaultWorkspace: WorkspaceState = {
     name: "Agency onboarding",
     slug: "agency-onboarding",
+    avatarSeed: "agency-onboarding",
 };
 
 const teams = [
@@ -118,21 +120,6 @@ const createStorageStore = (key: string, fallback: string) => {
 
 const collapsedStore = createStorageStore(SIDEBAR_COLLAPSED_KEY, "false");
 const widthStore = createStorageStore(SIDEBAR_WIDTH_KEY, String(DEFAULT_SIDEBAR_WIDTH));
-const workspaceStore = createStorageStore(WORKSPACE_KEY, JSON.stringify(defaultWorkspace));
-const activeTeamStore = createStorageStore(ACTIVE_TEAM_KEY, teams[0].name);
-
-const readWorkspace = (value: string): WorkspaceState => {
-    try {
-        const workspace = JSON.parse(value) as Partial<WorkspaceState>;
-        return {
-            name: workspace.name?.trim() || defaultWorkspace.name,
-            slug: workspace.slug?.trim() || defaultWorkspace.slug,
-        };
-    } catch {
-        return defaultWorkspace;
-    }
-};
-
 const slugify = (value: string) =>
     value
         .toLowerCase()
@@ -140,6 +127,23 @@ const slugify = (value: string) =>
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "")
         .slice(0, 48) || defaultWorkspace.slug;
+
+const titleFromSlug = (slug: string) =>
+    slug
+        .split("-")
+        .filter(Boolean)
+        .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+        .join(" ");
+
+const getWorkspaceFromPath = (pathName: string): WorkspaceState => {
+    const slug = pathName.split("/").filter(Boolean)[0] || defaultWorkspace.slug;
+
+    return {
+        name: titleFromSlug(slug) || defaultWorkspace.name,
+        slug,
+        avatarSeed: slug,
+    };
+};
 
 const isActivePath = (pathName: string, href: string) => {
     if (href === "/") return pathName === "/";
@@ -234,6 +238,7 @@ const WorkspaceMenu = ({
         const nextWorkspace = {
             name: name.trim() || defaultWorkspace.name,
             slug: slugify(slug || name),
+            avatarSeed: slugify(slug || name),
         };
 
         onWorkspaceChange(nextWorkspace);
@@ -250,9 +255,7 @@ const WorkspaceMenu = ({
                 onClick={toggleMenu}
                 className="flex h-10 w-full cursor-pointer items-center gap-3 rounded-full px-1 hover:border py-2 text-left transition hover:bg-[var(--surface-hover)] focus-visible:bg-[var(--surface-hover)] focus-visible:outline-none"
             >
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#d97757] text-sm font-semibold text-white">
-                    {workspace.name.slice(0, 1).toUpperCase()}
-                </div>
+                <WorkspaceAvatar seed={workspace.avatarSeed || workspace.slug} name={workspace.name} size="sm" />
                 <div className="min-w-0 flex-1">
                     <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{workspace.name}</p>
                 </div>
@@ -504,8 +507,8 @@ const SidebarContent = ({
 }) => {
     const pathName = usePathname();
     const { user } = useUser();
-    const workspace = readWorkspace(workspaceStore.useValue());
-    const activeTeam = activeTeamStore.useValue();
+    const [workspace, setWorkspace] = useState<WorkspaceState>(() => getWorkspaceFromPath(pathName));
+    const [activeTeam, setActiveTeam] = useState(teams[0].name);
     const scrollRef = useRef<HTMLDivElement>(null);
     const scrollHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
@@ -520,12 +523,16 @@ const SidebarContent = ({
     const sidebarMenuOpen = workspaceMenuOpen || teamMenuOpen;
 
     const handleWorkspaceChange = (nextWorkspace: WorkspaceState) => {
-        workspaceStore.setValue(JSON.stringify(nextWorkspace));
+        setWorkspace(nextWorkspace);
     };
 
     const handleTeamChange = (team: string) => {
-        activeTeamStore.setValue(team);
+        setActiveTeam(team);
     };
+
+    useEffect(() => {
+        setWorkspace(getWorkspaceFromPath(pathName));
+    }, [pathName]);
 
     const updateScrollThumb = useCallback((visible: boolean) => {
         const node = scrollRef.current;
@@ -677,27 +684,17 @@ const SidebarContent = ({
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-35 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)] to-transparent" />
 
             <div className="relative z-10 bg-[var(--bg-primary)] pt-3">
-                <ThemeToggle />
-
                 <SignedOut>
-                    <SignInButton mode="modal">
-                        <button className="mt-3 flex h-9 w-full items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 text-[13px] font-semibold text-[var(--text-primary)] shadow-[var(--shadow-soft-sm)] transition hover:bg-[var(--surface-hover)]">
-                            Sign in
-                        </button>
-                    </SignInButton>
+                    <ThemeToggle />
+                    <Link
+                        href="/sign-in"
+                        className="mt-3 flex h-9 w-full items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 text-[13px] font-semibold text-[var(--text-primary)] shadow-[var(--shadow-soft-sm)] transition hover:bg-[var(--surface-hover)]"
+                    >
+                        Sign in
+                    </Link>
                 </SignedOut>
                 <SignedIn>
-                    <div className="mt-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-2 shadow-[var(--shadow-soft-sm)]">
-                        <div className="flex min-w-0 items-center gap-2">
-                            <UserButton />
-                            <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
-                                    {user?.firstName || "Manager"}
-                                </p>
-                                <p className="text-xs text-[var(--text-muted)]">Admin</p>
-                            </div>
-                        </div>
-                    </div>
+                    <UserMenu />
                 </SignedIn>
             </div>
         </div>
@@ -713,11 +710,18 @@ const Navbar = () => {
     const sidebarWidth = clampSidebarWidth(Number.isFinite(persistedWidth) ? persistedWidth : DEFAULT_SIDEBAR_WIDTH);
     const dragStart = useRef<{ x: number; width: number } | null>(null);
     const dragMoved = useRef(false);
+    const isAuthRoute =
+        pathName.startsWith("/sign-in") ||
+        pathName.startsWith("/sign-up") ||
+        pathName.startsWith("/sso-callback");
+    const isPublicLanding = pathName === "/";
 
     useEffect(() => {
         document.documentElement.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
-        document.documentElement.dataset.sidebarCollapsed = String(collapsed);
-    }, [collapsed, sidebarWidth]);
+        if (!isAuthRoute && !isPublicLanding) {
+            document.documentElement.dataset.sidebarCollapsed = String(collapsed);
+        }
+    }, [collapsed, isAuthRoute, isPublicLanding, sidebarWidth]);
 
     const setCollapsed = (nextCollapsed: boolean) => {
         collapsedStore.setValue(String(nextCollapsed));
@@ -760,7 +764,7 @@ const Navbar = () => {
         event.currentTarget.releasePointerCapture(event.pointerId);
     };
 
-    if (pathName.startsWith("/onboarding")) return null;
+    if (isPublicLanding || pathName.startsWith("/onboarding") || isAuthRoute) return null;
 
     return (
         <>

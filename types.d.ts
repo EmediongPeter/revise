@@ -49,6 +49,63 @@ export interface IVoiceSession extends Document {
     updatedAt: Date;
 }
 
+export interface IUserProfile extends Document {
+    _id: string;
+    clerkId: string;
+    email: string;
+    firstName?: string;
+    lastName?: string;
+    displayName: string;
+    imageUrl?: string;
+    role?: string;
+    onboardingCompleted: boolean;
+    activeWorkspaceId?: Types.ObjectId;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface IWorkspace extends Document {
+    _id: string;
+    name: string;
+    slug: string;
+    avatarSeed?: string;
+    industry: string;
+    ownerClerkId: string;
+    createdByClerkId: string;
+    trainingGoals: string[];
+    googleDriveConnected: boolean;
+    uploadedSourceName?: string;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export type WorkspaceMemberRole = "owner" | "admin" | "trainer" | "member";
+export type WorkspaceMemberStatus = "active" | "invited" | "removed";
+
+export interface IWorkspaceMember extends Document {
+    _id: string;
+    workspaceId: Types.ObjectId;
+    clerkId?: string;
+    email: string;
+    displayName?: string;
+    role: WorkspaceMemberRole;
+    status: WorkspaceMemberStatus;
+    invitedByClerkId?: string;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface ITeam extends Document {
+    _id: string;
+    workspaceId: Types.ObjectId;
+    name: string;
+    description?: string;
+    createdByClerkId: string;
+    isDefault: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
 // ============================================
 // FORM & INPUT TYPES
 // ============================================

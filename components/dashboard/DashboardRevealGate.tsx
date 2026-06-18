@@ -1,39 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { gsap } from "gsap";
-import FullPageLoader from "@/components/FullPageLoader";
-import { DASHBOARD_REVEAL_KEY, ONBOARDING_COMPLETED_KEY } from "@/lib/onboarding";
-
-const subscribeToOnboarding = (callback: () => void) => {
-    window.addEventListener("storage", callback);
-    window.addEventListener(ONBOARDING_COMPLETED_KEY, callback);
-
-    return () => {
-        window.removeEventListener("storage", callback);
-        window.removeEventListener(ONBOARDING_COMPLETED_KEY, callback);
-    };
-};
-
-const getOnboardingSnapshot = () => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) === "true";
-};
+import { DASHBOARD_REVEAL_KEY } from "@/lib/onboarding";
 
 const DashboardRevealGate = ({ children }: { children: React.ReactNode }) => {
-    const router = useRouter();
     const shellRef = useRef<HTMLDivElement>(null);
-    const ready = useSyncExternalStore(subscribeToOnboarding, getOnboardingSnapshot, () => false);
 
     useEffect(() => {
-        if (!ready) {
-            router.replace("/onboarding");
-        }
-    }, [ready, router]);
-
-    useEffect(() => {
-        if (!ready || !shellRef.current) return;
+        if (!shellRef.current) return;
 
         const shouldReveal = window.sessionStorage.getItem(DASHBOARD_REVEAL_KEY) === "true";
         if (!shouldReveal) return;
@@ -62,11 +37,7 @@ const DashboardRevealGate = ({ children }: { children: React.ReactNode }) => {
         }, shellRef);
 
         return () => ctx.revert();
-    }, [ready]);
-
-    if (!ready) {
-        return <FullPageLoader label="Preparing workspace" />;
-    }
+    }, []);
 
     return <div ref={shellRef}>{children}</div>;
 };

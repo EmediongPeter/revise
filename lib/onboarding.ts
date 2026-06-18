@@ -1,7 +1,4 @@
-export const ONBOARDING_COMPLETED_KEY = "revise.onboarding.completed";
-export const ONBOARDING_PROFILE_KEY = "revise.onboarding.profile";
 export const DASHBOARD_REVEAL_KEY = "revise.dashboard.reveal";
-export const WORKSPACE_KEY = "revise.workspace";
 
 export type OnboardingProfile = {
     workspaceName: string;
@@ -14,11 +11,11 @@ export type OnboardingProfile = {
 };
 
 export const defaultOnboardingProfile: OnboardingProfile = {
-    workspaceName: "Agency onboarding",
-    workspaceSlug: "agency-onboarding",
-    industry: "Agency",
-    role: "Operations manager",
-    trainingGoals: ["Client communication"],
+    workspaceName: "",
+    workspaceSlug: "",
+    industry: "",
+    role: "",
+    trainingGoals: [],
     inviteEmails: "",
     googleDriveConnected: false,
 };
@@ -65,4 +62,4 @@ export const slugifyWorkspace = (value: string) =>
         .trim()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "")
-        .slice(0, 48) || defaultOnboardingProfile.workspaceSlug;
+        .slice(0, 48);
