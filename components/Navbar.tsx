@@ -1,12 +1,27 @@
 'use client';
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
+import { usePathname, useRouter } from "next/navigation";
+import { SignedIn, SignedOut } from "@clerk/nextjs";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import ThemeToggle from "@/components/ThemeToggle";
 import WorkspaceAvatar from "@/components/WorkspaceAvatar";
 import UserMenu from "@/components/UserMenu";
+import {
+    createTeam,
+    createWorkspace,
+    getWorkspaceTeamData,
+    switchWorkspace,
+    updateActiveWorkspace,
+    type TeamSummary,
+    type WorkspaceSummary,
+    type WorkspaceTeamData,
+} from "@/lib/actions/workspace.actions";
+import {
+    getActivationWizardState,
+    type ActivationWizardState,
+} from "@/lib/actions/wizard.actions";
 import {
     BarChart3,
     BookOpenCheck,
@@ -32,10 +47,8 @@ import {
     WalletCards,
     X,
 } from "lucide-react";
-import { FormEvent, PointerEvent, MouseEvent as ReactMouseEvent, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { FormEvent, PointerEvent, MouseEvent as ReactMouseEvent, useCallback, useEffect, useRef, useState, useTransition } from "react";
 
-const SIDEBAR_COLLAPSED_KEY = "revise.sidebar.collapsed";
-const SIDEBAR_WIDTH_KEY = "revise.sidebar.width";
 const DEFAULT_SIDEBAR_WIDTH = 272;
 const MIN_SIDEBAR_WIDTH = 236;
 const MAX_SIDEBAR_WIDTH = 320;
@@ -45,37 +58,24 @@ const TEAM_MENU_WIDTH = 280;
 const TEAM_MENU_HEIGHT = 318;
 
 type WorkspaceState = {
+    _id?: string;
     name: string;
     slug: string;
     avatarSeed?: string;
+    industry?: string;
+    memberRole?: string;
+    trainingGoals?: string[];
+    googleDriveConnected?: boolean;
+    uploadedSourceName?: string;
 };
 
-const defaultWorkspace: WorkspaceState = {
-    name: "Agency onboarding",
-    slug: "agency-onboarding",
-    avatarSeed: "agency-onboarding",
+const loadingWorkspace: WorkspaceState = {
+    name: "Loading workspace",
+    slug: "workspace",
+    avatarSeed: "workspace",
 };
 
-const nonWorkspaceRouteSegments = new Set([
-    "auth",
-    "books",
-    "knowledge",
-    "modules",
-    "onboarding",
-    "reports",
-    "sessions",
-    "settings",
-    "sign-in",
-    "sign-up",
-    "sso-callback",
-    "subscriptions",
-    "trainees",
-]);
-
-const teams = [
-    { name: "Client success", accent: "bg-[#d97757]" },
-    { name: "Operations", accent: "bg-zinc-400" },
-];
+const teamAccentClasses = ["bg-[#d97757]", "bg-emerald-500", "bg-sky-500", "bg-violet-500", "bg-zinc-400"];
 
 const primaryNavItems = [
     { label: "Overview", href: "/", icon: LayoutDashboard },
@@ -100,72 +100,56 @@ const secondaryNavItems = [
 
 const clampSidebarWidth = (width: number) => Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));
 
-const createStorageStore = (key: string, fallback: string) => {
-    const getSnapshot = () => {
-        if (typeof window === "undefined") return fallback;
-        return window.localStorage.getItem(key) ?? fallback;
-    };
-
-    const subscribe = (callback: () => void) => {
-        if (typeof window === "undefined") return () => {};
-
-        const handleStorage = (event: StorageEvent) => {
-            if (event.key === key) callback();
-        };
-
-        window.addEventListener("storage", handleStorage);
-        window.addEventListener(key, callback);
-
-        return () => {
-            window.removeEventListener("storage", handleStorage);
-            window.removeEventListener(key, callback);
-        };
-    };
-
-    const setValue = (value: string) => {
-        if (typeof window === "undefined") return;
-        window.localStorage.setItem(key, value);
-        window.dispatchEvent(new Event(key));
-    };
-
-    return {
-        useValue: () => useSyncExternalStore(subscribe, getSnapshot, () => fallback),
-        setValue,
-    };
-};
-
-const collapsedStore = createStorageStore(SIDEBAR_COLLAPSED_KEY, "false");
-const widthStore = createStorageStore(SIDEBAR_WIDTH_KEY, String(DEFAULT_SIDEBAR_WIDTH));
 const slugify = (value: string) =>
     value
         .toLowerCase()
         .trim()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "")
-        .slice(0, 48) || defaultWorkspace.slug;
+        .slice(0, 48) || "workspace";
 
-const titleFromSlug = (slug: string) =>
-    slug
-        .split("-")
-        .filter(Boolean)
-        .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-        .join(" ");
+const toWorkspaceState = (workspace: WorkspaceSummary): WorkspaceState => ({
+    _id: workspace._id,
+    name: workspace.name,
+    slug: workspace.slug,
+    avatarSeed: workspace.avatarSeed || workspace.slug,
+    industry: workspace.industry,
+    memberRole: workspace.memberRole,
+    trainingGoals: workspace.trainingGoals,
+    googleDriveConnected: workspace.googleDriveConnected,
+    uploadedSourceName: workspace.uploadedSourceName,
+});
 
-const getWorkspaceFromPath = (pathName: string): WorkspaceState => {
-    const firstSegment = pathName.split("/").filter(Boolean)[0];
-    const slug = firstSegment && !nonWorkspaceRouteSegments.has(firstSegment) ? firstSegment : defaultWorkspace.slug;
-
-    return {
-        name: titleFromSlug(slug) || defaultWorkspace.name,
-        slug,
-        avatarSeed: slug,
-    };
-};
+const getTeamAccent = (index: number) => teamAccentClasses[index % teamAccentClasses.length];
 
 const isActivePath = (pathName: string, href: string) => {
     if (href === "/") return pathName === "/";
     if (href === "/modules") return pathName === "/modules" || pathName.startsWith("/books");
     return pathName === href || pathName.startsWith(`${href}/`);
+};
+
+const isKnownDashboardPath = (pathName: string, activeWorkspaceSlug?: string) => {
+    const segments = pathName.split("/").filter(Boolean);
+
+    if (segments.length === 0) return true;
+
+    const [firstSegment, secondSegment] = segments;
+    const exactRoutes = new Set([
+        "knowledge",
+        "modules",
+        "trainees",
+        "sessions",
+        "reports",
+        "settings",
+        "subscriptions",
+        "wizard",
+    ]);
+
+    if (exactRoutes.has(firstSegment)) return segments.length === 1;
+    if (firstSegment === "books") return segments.length === 2 && Boolean(secondSegment);
+    if (firstSegment === "auth") return segments.length === 2 && secondSegment === "redirect";
+
+    return Boolean(activeWorkspaceSlug && segments.length === 1 && firstSegment === activeWorkspaceSlug);
 };
 
 const navLinkClass = (active: boolean) =>
@@ -200,21 +184,27 @@ const MenuItem = ({
 
 const WorkspaceMenu = ({
     workspace,
-    activeTeam,
+    workspaces,
     onWorkspaceChange,
-    onTeamChange,
+    onWorkspaceSelect,
+    onCreateWorkspace,
     onOpenChange,
 }: {
     workspace: WorkspaceState;
-    activeTeam: string;
+    workspaces: WorkspaceState[];
     onWorkspaceChange: (workspace: WorkspaceState) => void;
-    onTeamChange: (team: string) => void;
+    onWorkspaceSelect: (workspace: WorkspaceState) => void;
+    onCreateWorkspace: (name: string, slug: string) => Promise<boolean>;
     onOpenChange?: (open: boolean) => void;
 }) => {
     const [open, setOpen] = useState(false);
     const [editing, setEditing] = useState(false);
+    const [creatingWorkspace, setCreatingWorkspace] = useState(false);
     const [name, setName] = useState(workspace.name);
     const [slug, setSlug] = useState(workspace.slug);
+    const [workspaceName, setWorkspaceName] = useState("");
+    const [workspaceSlug, setWorkspaceSlug] = useState("");
+    const [isSaving, startSaving] = useTransition();
     const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0, width: WORKSPACE_MENU_WIDTH });
     const menuRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
@@ -250,18 +240,61 @@ const WorkspaceMenu = ({
         });
     };
 
+    const closeMenu = () => {
+        setOpen(false);
+        onOpenChange?.(false);
+    };
+
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const nextWorkspace = {
-            name: name.trim() || defaultWorkspace.name,
+            _id: workspace._id,
+            name: name.trim() || workspace.name,
             slug: slugify(slug || name),
             avatarSeed: slugify(slug || name),
+            industry: workspace.industry,
+            memberRole: workspace.memberRole,
+            trainingGoals: workspace.trainingGoals,
+            googleDriveConnected: workspace.googleDriveConnected,
+            uploadedSourceName: workspace.uploadedSourceName,
         };
 
-        onWorkspaceChange(nextWorkspace);
-        setName(nextWorkspace.name);
-        setSlug(nextWorkspace.slug);
-        setEditing(false);
+        startSaving(async () => {
+            const result = await updateActiveWorkspace({
+                name: nextWorkspace.name,
+                slug: nextWorkspace.slug,
+                industry: workspace.industry || "Other",
+                trainingGoals: workspace.trainingGoals || [],
+                googleDriveConnected: workspace.googleDriveConnected,
+                uploadedSourceName: workspace.uploadedSourceName,
+            });
+
+            if (!result.success) {
+                toast.error(result.error);
+                return;
+            }
+
+            const updated = toWorkspaceState(result.data.activeWorkspace);
+            onWorkspaceChange(updated);
+            setName(updated.name);
+            setSlug(updated.slug);
+            setEditing(false);
+            toast.success("Workspace updated.");
+        });
+    };
+
+    const handleCreateWorkspace = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        startSaving(async () => {
+            const created = await onCreateWorkspace(workspaceName, workspaceSlug || workspaceName);
+
+            if (!created) return;
+
+            setWorkspaceName("");
+            setWorkspaceSlug("");
+            setCreatingWorkspace(false);
+            closeMenu();
+        });
     };
 
     return (
@@ -315,15 +348,62 @@ const WorkspaceMenu = ({
                                 <button
                                     type="button"
                                     onClick={() => setEditing(false)}
+                                    disabled={isSaving}
                                     className="h-9 flex-1 rounded-lg border border-[var(--border-subtle)] text-sm font-medium text-[var(--text-secondary)]"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
+                                    disabled={isSaving}
                                     className="h-9 flex-1 rounded-lg bg-[var(--text-primary)] text-sm font-semibold text-[var(--text-inverse)]"
                                 >
-                                    Save
+                                    {isSaving ? "Saving" : "Save"}
+                                </button>
+                            </div>
+                        </form>
+                    ) : creatingWorkspace ? (
+                        <form onSubmit={handleCreateWorkspace} className="space-y-3 p-2">
+                            <div>
+                                <label className="text-xs font-medium text-[var(--text-muted)]">Workspace name</label>
+                                <input
+                                    value={workspaceName}
+                                    onChange={(event) => {
+                                        setWorkspaceName(event.target.value);
+                                        setWorkspaceSlug(slugify(event.target.value));
+                                    }}
+                                    className="mt-1 h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--border-medium)]"
+                                    autoFocus
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-[var(--text-muted)]">URL</label>
+                                <div className="mt-1 flex h-9 overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)]">
+                                    <span className="flex items-center border-r border-[var(--border-subtle)] px-3 text-xs text-[var(--text-muted)]">
+                                        revise.app/
+                                    </span>
+                                    <input
+                                        value={workspaceSlug}
+                                        onChange={(event) => setWorkspaceSlug(slugify(event.target.value))}
+                                        className="min-w-0 flex-1 bg-transparent px-3 text-sm text-[var(--text-primary)] outline-none"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    disabled={isSaving}
+                                    onClick={() => setCreatingWorkspace(false)}
+                                    className="h-9 flex-1 rounded-lg border border-[var(--border-subtle)] text-sm font-medium text-[var(--text-secondary)]"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSaving}
+                                    className="h-9 flex-1 rounded-lg bg-[var(--text-primary)] text-sm font-semibold text-[var(--text-inverse)]"
+                                >
+                                    {isSaving ? "Creating" : "Create"}
                                 </button>
                             </div>
                         </form>
@@ -334,33 +414,52 @@ const WorkspaceMenu = ({
                                 <p className="truncate text-xs text-[var(--text-muted)]">revise.app/{workspace.slug}</p>
                             </div>
                             <div className="my-1 h-px bg-[var(--border-subtle)]" />
-                            <MenuItem icon={Settings} shortcut="G then S" onClick={() => setEditing(true)}>
+                            <MenuItem
+                                icon={Settings}
+                                onClick={() => {
+                                    setName(workspace.name);
+                                    setSlug(workspace.slug);
+                                    setEditing(true);
+                                }}
+                            >
                                 Workspace settings
                             </MenuItem>
-                            <MenuItem icon={UserPlus}>Invite and manage members</MenuItem>
-                            <MenuItem icon={Copy}>Copy workspace URL</MenuItem>
+                            <Link href="/settings" onClick={closeMenu} className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]">
+                                <UserPlus className="size-4 shrink-0 text-[var(--text-muted)]" />
+                                <span className="min-w-0 flex-1 truncate whitespace-nowrap">Invite and manage members</span>
+                            </Link>
+                            <MenuItem
+                                icon={Copy}
+                                onClick={() => {
+                                    navigator.clipboard?.writeText(`${window.location.origin}/${workspace.slug}`);
+                                    toast.success("Workspace URL copied.");
+                                }}
+                            >
+                                Copy workspace URL
+                            </MenuItem>
                             <div className="my-1 h-px bg-[var(--border-subtle)]" />
                             <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
-                                Teams
+                                Workspaces
                             </div>
-                            {teams.map((team) => (
+                            {workspaces.map((item) => (
                                 <button
-                                    key={team.name}
+                                    key={item._id || item.slug}
                                     type="button"
-                                    onClick={() => onTeamChange(team.name)}
+                                    onClick={() => onWorkspaceSelect(item)}
                                     className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                                 >
-                                    <span className={cn("size-2.5 rounded-full", team.accent)} />
-                                    <span className="flex-1 text-left">{team.name}</span>
-                                    {activeTeam === team.name && <Check className="size-4 text-[var(--text-primary)]" />}
+                                    <WorkspaceAvatar seed={item.avatarSeed || item.slug} name={item.name} size="sm" className="size-6 p-[4px]" />
+                                    <span className="min-w-0 flex-1 truncate text-left">{item.name}</span>
+                                    {workspace._id === item._id && <Check className="size-4 text-[var(--text-primary)]" />}
                                 </button>
                             ))}
                             <button
                                 type="button"
+                                onClick={() => setCreatingWorkspace(true)}
                                 className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                             >
                                 <Plus className="size-4 text-[var(--text-muted)]" />
-                                Add team
+                                Add workspace
                             </button>
                             <div className="my-1 h-px bg-[var(--border-subtle)]" />
                             <MenuItem icon={LogOut}>Log out</MenuItem>
@@ -373,15 +472,22 @@ const WorkspaceMenu = ({
 };
 
 const TeamSection = ({
+    teams,
     activeTeam,
     onTeamChange,
+    onCreateTeam,
     onOpenChange,
 }: {
+    teams: TeamSummary[];
     activeTeam: string;
-    onTeamChange: (team: string) => void;
+    onTeamChange: (team: TeamSummary) => void;
+    onCreateTeam: (name: string) => Promise<boolean>;
     onOpenChange?: (open: boolean) => void;
 }) => {
     const [teamMenuOpen, setTeamMenuOpen] = useState(false);
+    const [creatingTeam, setCreatingTeam] = useState(false);
+    const [teamName, setTeamName] = useState("");
+    const [isSaving, startSaving] = useTransition();
     const [menuPosition, setMenuPosition] = useState<{
         left: number;
         top?: number;
@@ -442,12 +548,31 @@ const TeamSection = ({
         onOpenChange?.(true);
     };
 
+    const handleCreateTeam = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        startSaving(async () => {
+            const created = await onCreateTeam(teamName);
+
+            if (!created) return;
+
+            setTeamName("");
+            setCreatingTeam(false);
+            setTeamMenuOpen(false);
+            onOpenChange?.(false);
+        });
+    };
+
     return (
         <div className="mt-4">
             <div className="mb-1 flex items-center justify-between px-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">Team</p>
                 <button
                     type="button"
+                    onClick={() => {
+                        setCreatingTeam(true);
+                        setTeamMenuOpen(true);
+                        onOpenChange?.(true);
+                    }}
                     className="rounded-md p-1 text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                 >
                     <Plus className="size-3.5" />
@@ -461,7 +586,7 @@ const TeamSection = ({
                     onContextMenu={handleTeamContextMenu}
                     className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                 >
-                    <span className="size-2.5 rounded-full bg-[#d97757]" />
+                    <span className={cn("size-2.5 rounded-full", getTeamAccent(Math.max(0, teams.findIndex((team) => team.name === activeTeam))))} />
                     <span className="flex-1 truncate text-left">{activeTeam}</span>
                     <MoreHorizontal className="size-4 text-[var(--text-muted)]" />
                 </button>
@@ -484,22 +609,45 @@ const TeamSection = ({
                         <MenuItem icon={Copy}>Copy team URL</MenuItem>
                         <MenuItem icon={BookOpenCheck}>Open archive</MenuItem>
                         <div className="my-1 h-px bg-[var(--border-subtle)]" />
-                        {teams.map((team) => (
+                        {teams.map((team, index) => (
                             <button
-                                key={team.name}
+                                key={team._id}
                                 type="button"
                                 onClick={() => {
-                                    onTeamChange(team.name);
+                                    onTeamChange(team);
                                     setTeamMenuOpen(false);
                                     onOpenChange?.(false);
                                 }}
                                 className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                             >
-                                <span className={cn("size-2.5 rounded-full", team.accent)} />
+                                <span className={cn("size-2.5 rounded-full", getTeamAccent(index))} />
                                 <span className="flex-1 text-left">{team.name}</span>
                                 {activeTeam === team.name && <Check className="size-4" />}
                             </button>
                         ))}
+                        {creatingTeam ? (
+                            <form onSubmit={handleCreateTeam} className="flex gap-2 px-2 py-1">
+                                <input
+                                    value={teamName}
+                                    onChange={(event) => setTeamName(event.target.value)}
+                                    placeholder="Team name"
+                                    className="min-w-0 flex-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3 text-sm text-[var(--text-primary)] outline-none"
+                                    autoFocus
+                                />
+                                <button type="submit" disabled={isSaving} className="h-9 rounded-lg bg-[var(--text-primary)] px-3 text-sm font-semibold text-[var(--text-inverse)]">
+                                    Add
+                                </button>
+                            </form>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => setCreatingTeam(true)}
+                                className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+                            >
+                                <Plus className="size-4 text-[var(--text-muted)]" />
+                                Add team
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -523,9 +671,13 @@ const SidebarContent = ({
     onNavigate?: () => void;
 }) => {
     const pathName = usePathname();
-    const { user } = useUser();
-    const [workspace, setWorkspace] = useState<WorkspaceState>(() => getWorkspaceFromPath(pathName));
-    const [activeTeam, setActiveTeam] = useState(teams[0].name);
+    const router = useRouter();
+    const [workspace, setWorkspace] = useState<WorkspaceState>(loadingWorkspace);
+    const [workspaces, setWorkspaces] = useState<WorkspaceState[]>([]);
+    const [teams, setTeams] = useState<TeamSummary[]>([]);
+    const [activeTeam, setActiveTeam] = useState("General");
+    const [wizardState, setWizardState] = useState<ActivationWizardState | null>(null);
+    const [, startSidebarTransition] = useTransition();
     const scrollRef = useRef<HTMLDivElement>(null);
     const scrollHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
@@ -539,16 +691,100 @@ const SidebarContent = ({
     });
     const sidebarMenuOpen = workspaceMenuOpen || teamMenuOpen;
 
-    const handleWorkspaceChange = (nextWorkspace: WorkspaceState) => {
+    const applyWorkspaceData = (data: WorkspaceTeamData) => {
+        const nextWorkspace = toWorkspaceState(data.activeWorkspace);
+        const nextTeams = data.teams;
+
         setWorkspace(nextWorkspace);
+        setWorkspaces(data.workspaces.map(toWorkspaceState));
+        setTeams(nextTeams);
+        setActiveTeam((current) => {
+            if (nextTeams.some((team) => team.name === current)) return current;
+            return nextTeams[0]?.name || "General";
+        });
     };
 
-    const handleTeamChange = (team: string) => {
-        setActiveTeam(team);
+    const handleWorkspaceChange = (nextWorkspace: WorkspaceState) => {
+        setWorkspace(nextWorkspace);
+        setWorkspaces((current) =>
+            current.map((item) => (item._id && item._id === nextWorkspace._id ? nextWorkspace : item)),
+        );
+    };
+
+    const handleWorkspaceSelect = (nextWorkspace: WorkspaceState) => {
+        if (!nextWorkspace._id || nextWorkspace._id === workspace._id) return;
+
+        startSidebarTransition(async () => {
+            const result = await switchWorkspace(nextWorkspace._id!);
+
+            if (!result.success) {
+                toast.error(result.error);
+                return;
+            }
+
+            setWorkspace(nextWorkspace);
+            setActiveTeam("General");
+            toast.success(`Switched to ${nextWorkspace.name}.`);
+            onNavigate?.();
+            router.push(`/${result.data.workspaceSlug}`);
+            router.refresh();
+        });
+    };
+
+    const handleCreateWorkspace = async (name: string, slug: string) => {
+        const result = await createWorkspace({ name, slug });
+
+        if (!result.success) {
+            toast.error(result.error);
+            return false;
+        }
+
+        applyWorkspaceData(result.data);
+        toast.success("Workspace created.");
+        router.push(`/${result.data.activeWorkspace.slug}`);
+        router.refresh();
+        return true;
+    };
+
+    const handleCreateTeam = async (name: string) => {
+        const result = await createTeam({ name });
+
+        if (!result.success) {
+            toast.error(result.error);
+            return false;
+        }
+
+        applyWorkspaceData(result.data);
+        setActiveTeam(name.trim());
+        toast.success("Team added.");
+        router.refresh();
+        return true;
+    };
+
+    const handleTeamChange = (team: TeamSummary) => {
+        setActiveTeam(team.name);
     };
 
     useEffect(() => {
-        setWorkspace(getWorkspaceFromPath(pathName));
+        let mounted = true;
+
+        startSidebarTransition(async () => {
+            const [result, wizardResult] = await Promise.all([
+                getWorkspaceTeamData(),
+                getActivationWizardState(),
+            ]);
+
+            if (!mounted) return;
+
+            if (wizardResult.success) setWizardState(wizardResult.data);
+            if (!result.success) return;
+
+            applyWorkspaceData(result.data);
+        });
+
+        return () => {
+            mounted = false;
+        };
     }, [pathName]);
 
     const updateScrollThumb = useCallback((visible: boolean) => {
@@ -615,9 +851,10 @@ const SidebarContent = ({
                 <div className="pb-32">
                     <WorkspaceMenu
                         workspace={workspace}
-                        activeTeam={activeTeam}
+                        workspaces={workspaces}
                         onWorkspaceChange={handleWorkspaceChange}
-                        onTeamChange={handleTeamChange}
+                        onWorkspaceSelect={handleWorkspaceSelect}
+                        onCreateWorkspace={handleCreateWorkspace}
                         onOpenChange={setWorkspaceMenuOpen}
                     />
 
@@ -656,7 +893,13 @@ const SidebarContent = ({
                         })}
                     </nav>
 
-                    <TeamSection activeTeam={activeTeam} onTeamChange={handleTeamChange} onOpenChange={setTeamMenuOpen} />
+                    <TeamSection
+                        teams={teams}
+                        activeTeam={activeTeam}
+                        onTeamChange={handleTeamChange}
+                        onCreateTeam={handleCreateTeam}
+                        onOpenChange={setTeamMenuOpen}
+                    />
 
                     <nav className="mt-4 flex flex-col gap-1">
                         <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
@@ -698,9 +941,24 @@ const SidebarContent = ({
                 />
             )}
 
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-35 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)] to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[8] h-54 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/95 via-75% to-transparent" />
 
-            <div className="relative z-10 bg-[var(--bg-primary)] pt-3">
+            <div className="relative z-20 pt-4 before:pointer-events-none before:absolute before:inset-x-[-10px] before:bottom-[-10px] before:top-[-34px] before:-z-10 before:bg-gradient-to-t before:from-[var(--bg-primary)] before:via-[var(--bg-primary)]/92 before:to-transparent">
+                {wizardState && !wizardState.completed && (
+                    <Link
+                        href="/wizard"
+                        onClick={onNavigate}
+                        className="mb-3 block rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)]/95 p-3 text-left shadow-[var(--shadow-soft-sm)] backdrop-blur transition hover:bg-[var(--surface-hover)]"
+                    >
+                        <div className="flex items-center justify-between gap-3">
+                            <p className="truncate text-sm font-semibold text-[var(--text-primary)]">Get started with Revise</p>
+                            <span className="text-xs font-semibold text-[#d97757]">{wizardState.percent}%</span>
+                        </div>
+                        <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                            Up next: {wizardState.nextStep?.title || "Review optional setup"}
+                        </p>
+                    </Link>
+                )}
                 <SignedOut>
                     <ThemeToggle />
                     <Link
@@ -722,9 +980,9 @@ const Navbar = () => {
     const pathName = usePathname();
     const [isOpen, setIsOpen] = useState(false);
     const [railHintVisible, setRailHintVisible] = useState(false);
-    const collapsed = collapsedStore.useValue() === "true";
-    const persistedWidth = Number(widthStore.useValue());
-    const sidebarWidth = clampSidebarWidth(Number.isFinite(persistedWidth) ? persistedWidth : DEFAULT_SIDEBAR_WIDTH);
+    const [collapsed, setCollapsed] = useState(false);
+    const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+    const [activeWorkspaceSlug, setActiveWorkspaceSlug] = useState<string>();
     const dragStart = useRef<{ x: number; width: number } | null>(null);
     const dragMoved = useRef(false);
     const isAuthRoute =
@@ -732,17 +990,27 @@ const Navbar = () => {
         pathName.startsWith("/sign-up") ||
         pathName.startsWith("/sso-callback");
     const isPublicLanding = pathName === "/";
+    const routeAllowsSidebar = isKnownDashboardPath(pathName, activeWorkspaceSlug);
 
     useEffect(() => {
         document.documentElement.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
-        if (!isAuthRoute && !isPublicLanding) {
-            document.documentElement.dataset.sidebarCollapsed = String(collapsed);
-        }
-    }, [collapsed, isAuthRoute, isPublicLanding, sidebarWidth]);
+        document.documentElement.dataset.sidebarCollapsed = String(
+            collapsed || isAuthRoute || isPublicLanding || !routeAllowsSidebar,
+        );
+    }, [collapsed, isAuthRoute, isPublicLanding, routeAllowsSidebar, sidebarWidth]);
 
-    const setCollapsed = (nextCollapsed: boolean) => {
-        collapsedStore.setValue(String(nextCollapsed));
-    };
+    useEffect(() => {
+        let mounted = true;
+
+        getWorkspaceTeamData().then((result) => {
+            if (!mounted || !result.success) return;
+            setActiveWorkspaceSlug(result.data.activeWorkspace.slug);
+        });
+
+        return () => {
+            mounted = false;
+        };
+    }, [pathName]);
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -773,7 +1041,7 @@ const Navbar = () => {
         if (!dragStart.current) return;
         if (Math.abs(event.clientX - dragStart.current.x) > 3) dragMoved.current = true;
         const nextWidth = clampSidebarWidth(dragStart.current.width + event.clientX - dragStart.current.x);
-        widthStore.setValue(String(nextWidth));
+        setSidebarWidth(nextWidth);
     };
 
     const handleResizePointerUp = (event: PointerEvent<HTMLButtonElement>) => {
@@ -781,7 +1049,7 @@ const Navbar = () => {
         event.currentTarget.releasePointerCapture(event.pointerId);
     };
 
-    if (isPublicLanding || pathName.startsWith("/onboarding") || isAuthRoute) return null;
+    if (isPublicLanding || pathName.startsWith("/onboarding") || isAuthRoute || !routeAllowsSidebar) return null;
 
     return (
         <>
@@ -792,7 +1060,9 @@ const Navbar = () => {
                 )}
                 style={{ width: sidebarWidth }}
             >
-                <SidebarContent />
+                <div className="relative z-20 h-full">
+                    <SidebarContent />
+                </div>
                 <button
                     type="button"
                     aria-label="Resize sidebar"
@@ -801,7 +1071,7 @@ const Navbar = () => {
                     onPointerDown={handleResizePointerDown}
                     onPointerMove={handleResizePointerMove}
                     onPointerUp={handleResizePointerUp}
-                    className="group absolute -right-1 top-0 z-[60] h-full w-2 cursor-col-resize bg-transparent transition hover:bg-[#d97757]/35"
+                    className="group absolute -right-1 top-0 z-[5] h-full w-2 cursor-col-resize bg-transparent transition hover:bg-[#d97757]/35"
                 />
                 <button
                     type="button"
@@ -809,13 +1079,16 @@ const Navbar = () => {
                     onMouseEnter={() => setRailHintVisible(true)}
                     onMouseLeave={() => setRailHintVisible(false)}
                     onClick={() => setCollapsed(true)}
-                    className="absolute -right-3 top-1/2 z-[70] flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-muted)] shadow-[var(--shadow-soft-sm)] transition hover:border-[#d97757]/50 hover:text-[var(--text-primary)]"
+                    className={cn(
+                        "absolute -right-3 top-1/2 z-[6] flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-muted)] shadow-[var(--shadow-soft-sm)] transition hover:border-[#d97757]/50 hover:text-[var(--text-primary)]",
+                        railHintVisible ? "opacity-100" : "opacity-0",
+                    )}
                 >
                     <ChevronLeft className="size-3.5" />
                 </button>
                 <div
                     className={cn(
-                        "pointer-events-none absolute left-[calc(100%+18px)] top-1/2 z-[140] -translate-y-1/2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-2 text-xs font-semibold leading-5 text-[var(--text-primary)] shadow-[var(--shadow-soft-lg)] transition-opacity",
+                        "pointer-events-none absolute left-[calc(100%+18px)] top-1/2 z-[6] -translate-y-1/2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-2 text-xs font-semibold leading-5 text-[var(--text-primary)] shadow-[var(--shadow-soft-lg)] transition-opacity",
                         railHintVisible ? "opacity-100" : "opacity-0",
                     )}
                 >
