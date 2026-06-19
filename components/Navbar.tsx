@@ -573,7 +573,8 @@ const TeamSection = ({
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">Team</p>
                 <button
                     type="button"
-                    onClick={() => {
+                    onClick={(event) => {
+                        positionTeamMenu(event.currentTarget.getBoundingClientRect());
                         setCreatingTeam(true);
                         setTeamMenuOpen(true);
                         onOpenChange?.(true);

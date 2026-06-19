@@ -4,9 +4,17 @@ import {
     ACCEPTED_PDF_TYPES,
     ACCEPTED_IMAGE_TYPES,
     MAX_IMAGE_SIZE,
+    ACCEPTED_KNOWLEDGE_SOURCE_EXTENSIONS,
     ACCEPTED_KNOWLEDGE_SOURCE_TYPES,
     MAX_KNOWLEDGE_SOURCE_SIZE,
 } from './constants';
+
+const hasAcceptedKnowledgeSourceType = (file: File) => {
+    if (ACCEPTED_KNOWLEDGE_SOURCE_TYPES.includes(file.type)) return true;
+
+    const fileName = file.name.toLowerCase();
+    return ACCEPTED_KNOWLEDGE_SOURCE_EXTENSIONS.some((extension) => fileName.endsWith(extension));
+};
 
 export const UploadSchema = z.object({
     title: z.string().min(1, "Title is required").max(100, "Title is too long"),
@@ -37,7 +45,7 @@ export const KnowledgeSourceUploadSchema = z.object({
     teamIds: z.array(z.string()),
     file: z.instanceof(File, { message: "Source file is required" })
         .refine((file) => file.size <= MAX_KNOWLEDGE_SOURCE_SIZE, "File size must be less than 25MB")
-        .refine((file) => ACCEPTED_KNOWLEDGE_SOURCE_TYPES.includes(file.type), "Only PDF, TXT, and Markdown files are accepted"),
+        .refine(hasAcceptedKnowledgeSourceType, "Only PDF, TXT, and Markdown files are accepted"),
 }).refine((value) => value.scope === "workspace" || value.teamIds.length > 0, {
     message: "Select at least one team or choose entire workspace",
     path: ["teamIds"],

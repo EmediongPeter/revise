@@ -3,6 +3,13 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { auth } from "@clerk/nextjs/server";
 import { ACCEPTED_KNOWLEDGE_SOURCE_TYPES, MAX_KNOWLEDGE_SOURCE_SIZE } from "@/lib/constants";
 
+class UnauthorizedUploadError extends Error {
+    constructor() {
+        super("User is not authorized to upload knowledge sources.");
+        this.name = "UnauthorizedUploadError";
+    }
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
     try {
         const body = (await request.json()) as HandleUploadBody;
@@ -15,7 +22,7 @@ export async function POST(request: Request): Promise<NextResponse> {
                 const { userId } = await auth();
 
                 if (!userId) {
-                    throw new Error("Unauthorized: User not authenticated");
+                    throw new UnauthorizedUploadError();
                 }
 
                 return {
@@ -32,8 +39,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
         return NextResponse.json(jsonResponse);
     } catch (error) {
-        const message = error instanceof Error ? error.message : "Upload failed";
-        const status = message.includes("Unauthorized") ? 401 : 500;
+        const status = error instanceof UnauthorizedUploadError ? 401 : 500;
 
         console.error("Knowledge upload error", error);
 

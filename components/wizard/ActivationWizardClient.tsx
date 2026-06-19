@@ -130,38 +130,48 @@ const ActivationWizardClient = ({ initialState }: { initialState: ActivationWiza
 
     const completeStep = (step: WizardStep) => {
         startTransition(async () => {
-            const result = await completeWizardStep(step.id);
+            try {
+                const result = await completeWizardStep(step.id);
 
-            if (!result.success) {
-                toast.error(result.error);
-                return;
+                if (!result.success) {
+                    toast.error(result.error);
+                    return;
+                }
+
+                setState(result.data);
+
+                if (result.data.completed) {
+                    toast.success("Revise setup is complete.");
+                    router.push(`/${result.data.workspaceSlug}`);
+                    router.refresh();
+                    return;
+                }
+
+                toast.success(`${step.title} marked done.`);
+            } catch (error) {
+                console.error(error);
+                toast.error("Could not update setup progress.");
             }
-
-            setState(result.data);
-
-            if (result.data.completed) {
-                toast.success("Revise setup is complete.");
-                router.push(`/${result.data.workspaceSlug}`);
-                router.refresh();
-                return;
-            }
-
-            toast.success(`${step.title} marked done.`);
         });
     };
 
     const skipWizard = () => {
         startTransition(async () => {
-            const result = await skipActivationWizard();
+            try {
+                const result = await skipActivationWizard();
 
-            if (!result.success) {
-                toast.error(result.error);
-                return;
+                if (!result.success) {
+                    toast.error(result.error);
+                    return;
+                }
+
+                toast.success("You can continue setup from the sidebar anytime.");
+                router.push(`/${result.data.workspaceSlug}`);
+                router.refresh();
+            } catch (error) {
+                console.error(error);
+                toast.error("Could not skip setup right now.");
             }
-
-            toast.success("You can continue setup from the sidebar anytime.");
-            router.push(`/${result.data.workspaceSlug}`);
-            router.refresh();
         });
     };
 

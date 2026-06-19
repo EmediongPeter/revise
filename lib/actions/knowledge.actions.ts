@@ -2,7 +2,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import { connectToDatabase } from "@/database/mongoose";
 import KnowledgeChunk from "@/database/models/knowledge-chunk.model";
 import KnowledgeSource from "@/database/models/knowledge-source.model";
@@ -264,30 +264,7 @@ export const createKnowledgeSourceMetadata = async (
         return { success: false, error: scopeResult.error };
     }
 
-    let version = 1;
-    let replacesSourceObjectId: Types.ObjectId | undefined;
-
-    if (input.replacesSourceId) {
-        if (!Types.ObjectId.isValid(input.replacesSourceId)) {
-            return { success: false, error: "The source version you are replacing could not be found." };
-        }
-
-        const previousSource = await KnowledgeSource.findOne({
-            _id: input.replacesSourceId,
-            workspaceId: access.workspace._id,
-        });
-
-        if (!previousSource) {
-            return { success: false, error: "The source version you are replacing could not be found." };
-        }
-
-        version = previousSource.version + 1;
-        replacesSourceObjectId = previousSource._id;
-        previousSource.isCurrentVersion = false;
-        await previousSource.save();
-    }
-
-    const source = await KnowledgeSource.create({
+    const sourceData = {
         workspaceId: access.workspace._id,
         teamIds: scopeResult.teamObjectIds,
         scope: scopeResult.scope,
@@ -295,7 +272,7 @@ export const createKnowledgeSourceMetadata = async (
         description: input.description?.trim() || undefined,
         sourceType: input.sourceType,
         origin: input.origin || "manual-upload",
-        status: "uploaded",
+        status: "uploaded" as const,
         fileName: input.fileName?.trim() || undefined,
         fileUrl: input.fileUrl?.trim() || undefined,
         fileBlobKey: input.fileBlobKey?.trim() || undefined,
@@ -303,12 +280,57 @@ export const createKnowledgeSourceMetadata = async (
         fileSize: input.fileSize,
         externalUrl: input.externalUrl?.trim() || undefined,
         externalId: input.externalId?.trim() || undefined,
-        version,
-        replacesSourceId: replacesSourceObjectId,
+        version: 1,
+        replacesSourceId: undefined as Types.ObjectId | undefined,
         isCurrentVersion: true,
         createdByClerkId: access.userId,
         updatedByClerkId: access.userId,
-    });
+    };
+
+    let source!: IKnowledgeSource;
+
+    if (input.replacesSourceId) {
+        if (!Types.ObjectId.isValid(input.replacesSourceId)) {
+            return { success: false, error: "The source version you are replacing could not be found." };
+        }
+
+        const session = await mongoose.startSession();
+
+        try {
+            await session.withTransaction(async () => {
+                const previousSource = await KnowledgeSource.findOne({
+                    _id: input.replacesSourceId,
+                    workspaceId: access.workspace._id,
+                }).session(session);
+
+                if (!previousSource) {
+                    throw new Error("The source version you are replacing could not be found.");
+                }
+
+                if (!previousSource.isCurrentVersion) {
+                    throw new Error("Only the current source version can be replaced.");
+                }
+
+                sourceData.version = previousSource.version + 1;
+                sourceData.replacesSourceId = previousSource._id;
+                previousSource.isCurrentVersion = false;
+                previousSource.updatedByClerkId = access.userId;
+                await previousSource.save({ session });
+
+                const [createdSource] = await KnowledgeSource.create([sourceData], { session });
+                source = createdSource;
+            });
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : "Failed to create source version.",
+            };
+        } finally {
+            await session.endSession();
+        }
+    } else {
+        source = await KnowledgeSource.create(sourceData);
+    }
 
     revalidatePath("/knowledge");
     revalidatePath(`/${access.workspace.slug}`);

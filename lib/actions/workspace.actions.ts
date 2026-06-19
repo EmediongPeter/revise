@@ -2,7 +2,7 @@
 
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import { connectToDatabase } from "@/database/mongoose";
 import Team from "@/database/models/team.model";
 import UserProfile from "@/database/models/user-profile.model";
@@ -244,47 +244,72 @@ export const createWorkspace = async (input: {
     }
 
     const workspaceId = new Types.ObjectId();
-    const workspace = await Workspace.create({
-        _id: workspaceId,
-        name,
-        slug,
-        avatarSeed: slug,
-        industry: input.industry?.trim() || "Other",
-        ownerClerkId: userId,
-        createdByClerkId: userId,
-        trainingGoals: [],
-        googleDriveConnected: false,
-    });
+    const session = await mongoose.startSession();
+    let workspace!: IWorkspace;
 
-    await UserProfile.findOneAndUpdate(
-        { clerkId: userId },
-        {
-            clerkId: userId,
-            email,
-            displayName,
-            onboardingCompleted: true,
-            activeWorkspaceId: workspaceId,
-        },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
+    try {
+        await session.withTransaction(async () => {
+            const [createdWorkspace] = await Workspace.create(
+                [{
+                    _id: workspaceId,
+                    name,
+                    slug,
+                    avatarSeed: slug,
+                    industry: input.industry?.trim() || "Other",
+                    ownerClerkId: userId,
+                    createdByClerkId: userId,
+                    trainingGoals: [],
+                    googleDriveConnected: false,
+                }],
+                { session },
+            );
+            workspace = createdWorkspace;
 
-    await WorkspaceMember.create({
-        workspaceId,
-        clerkId: userId,
-        email,
-        displayName,
-        role: "owner",
-        status: "active",
-        invitedByClerkId: userId,
-    });
+            await UserProfile.findOneAndUpdate(
+                { clerkId: userId },
+                {
+                    clerkId: userId,
+                    email,
+                    displayName,
+                    onboardingCompleted: true,
+                    activeWorkspaceId: workspaceId,
+                },
+                { upsert: true, new: true, setDefaultsOnInsert: true, session },
+            );
 
-    await Team.create({
-        workspaceId,
-        name: "General",
-        description: "Default team for shared training modules.",
-        createdByClerkId: userId,
-        isDefault: true,
-    });
+            await WorkspaceMember.create(
+                [{
+                    workspaceId,
+                    clerkId: userId,
+                    email,
+                    displayName,
+                    role: "owner",
+                    status: "active",
+                    invitedByClerkId: userId,
+                }],
+                { session },
+            );
+
+            await Team.create(
+                [{
+                    workspaceId,
+                    name: "General",
+                    description: "Default team for shared training modules.",
+                    createdByClerkId: userId,
+                    isDefault: true,
+                }],
+                { session },
+            );
+        });
+    } catch (error) {
+        if (isDuplicateKeyError(error)) {
+            return { success: false, error: "That workspace URL is already taken." };
+        }
+
+        throw error;
+    } finally {
+        await session.endSession();
+    }
 
     revalidatePath("/");
     revalidatePath("/settings");
@@ -438,10 +463,14 @@ export const updateTeam = async (input: {
     }
 
     try {
-        await Team.findOneAndUpdate(
+        const updatedTeam = await Team.findOneAndUpdate(
             { _id: input.teamId, workspaceId: access.workspace._id },
             { name, description: input.description?.trim() || undefined },
         );
+
+        if (!updatedTeam) {
+            return { success: false, error: "That team could not be found." };
+        }
     } catch (error) {
         if (isDuplicateKeyError(error)) {
             return { success: false, error: "A team with that name already exists in this workspace." };

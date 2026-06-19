@@ -149,7 +149,7 @@ export const getActivationWizardState = async (): Promise<ActionResult<Activatio
                     description: sourceCompleted
                         ? "Your workspace has source material Revise can use for training."
                         : "Upload one SOP, handbook, policy, or onboarding guide so Revise has business context.",
-                    href: "/books/new",
+                    href: `/${workspace.slug}/knowledge/new`,
                     actionLabel: sourceCompleted ? "View sources" : "Upload source",
                     completed: sourceCompleted,
                     autoCompleted: sourceCompleted,

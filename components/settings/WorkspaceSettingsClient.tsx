@@ -131,6 +131,7 @@ const WorkspaceSettingsClient = ({ initialData }: { initialData: WorkspaceTeamDa
     };
 
     const canEditWorkspace = ["owner", "admin"].includes(workspace.memberRole);
+    const canManageTeams = ["owner", "admin", "trainer"].includes(workspace.memberRole);
 
     return (
         <main className="container wrapper">
@@ -249,18 +250,18 @@ const WorkspaceSettingsClient = ({ initialData }: { initialData: WorkspaceTeamDa
                         <input
                             value={newTeamName}
                             onChange={(event) => setNewTeamName(event.target.value)}
-                            disabled={isPending}
+                            disabled={!canManageTeams || isPending}
                             className={inputClass}
                             placeholder="New team name"
                         />
                         <input
                             value={newTeamDescription}
                             onChange={(event) => setNewTeamDescription(event.target.value)}
-                            disabled={isPending}
+                            disabled={!canManageTeams || isPending}
                             className={inputClass}
                             placeholder="Description"
                         />
-                        <Button type="submit" size="sm" disabled={isPending} className="mt-3 w-full rounded-lg">
+                        <Button type="submit" size="sm" disabled={!canManageTeams || isPending} className="mt-3 w-full rounded-lg">
                             <Plus className="size-4" />
                             Add team
                         </Button>
@@ -280,7 +281,7 @@ const WorkspaceSettingsClient = ({ initialData }: { initialData: WorkspaceTeamDa
                                     </div>
                                     <input
                                         value={draft.name}
-                                        disabled={isPending}
+                                        disabled={!canManageTeams || isPending}
                                         onChange={(event) =>
                                             setEditingTeams((current) => ({
                                                 ...current,
@@ -291,7 +292,7 @@ const WorkspaceSettingsClient = ({ initialData }: { initialData: WorkspaceTeamDa
                                     />
                                     <input
                                         value={draft.description}
-                                        disabled={isPending}
+                                        disabled={!canManageTeams || isPending}
                                         onChange={(event) =>
                                             setEditingTeams((current) => ({
                                                 ...current,
@@ -302,7 +303,7 @@ const WorkspaceSettingsClient = ({ initialData }: { initialData: WorkspaceTeamDa
                                         placeholder="Description"
                                     />
                                     <div className="mt-3 flex gap-2">
-                                        <Button type="button" size="sm" variant="outline" disabled={isPending} onClick={() => handleUpdateTeam(team._id)} className="flex-1 rounded-lg">
+                                        <Button type="button" size="sm" variant="outline" disabled={!canManageTeams || isPending} onClick={() => handleUpdateTeam(team._id)} className="flex-1 rounded-lg">
                                             <Check className="size-4" />
                                             Save
                                         </Button>
@@ -310,7 +311,7 @@ const WorkspaceSettingsClient = ({ initialData }: { initialData: WorkspaceTeamDa
                                             type="button"
                                             size="sm"
                                             variant="ghost"
-                                            disabled={isPending || team.isDefault}
+                                            disabled={!canManageTeams || isPending || team.isDefault}
                                             onClick={() => handleDeleteTeam(team._id)}
                                             className="rounded-lg text-[var(--text-muted)]"
                                         >
