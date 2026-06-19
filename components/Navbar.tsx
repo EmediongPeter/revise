@@ -87,7 +87,7 @@ const primaryNavItems = [
 ];
 
 const setupNavItems = [
-    { label: "Import sources", href: "/books/new", icon: Upload },
+    { label: "Import sources", href: "/knowledge/new", icon: Upload },
     { label: "Invite people", href: "/trainees", icon: UserPlus },
 ];
 
@@ -145,11 +145,16 @@ const isKnownDashboardPath = (pathName: string, activeWorkspaceSlug?: string) =>
         "wizard",
     ]);
 
+    if (firstSegment === "knowledge") return segments.length === 1 || (segments.length === 2 && secondSegment === "new");
     if (exactRoutes.has(firstSegment)) return segments.length === 1;
     if (firstSegment === "books") return segments.length === 2 && Boolean(secondSegment);
     if (firstSegment === "auth") return segments.length === 2 && secondSegment === "redirect";
 
-    return Boolean(activeWorkspaceSlug && segments.length === 1 && firstSegment === activeWorkspaceSlug);
+    if (!activeWorkspaceSlug || firstSegment !== activeWorkspaceSlug) return false;
+    if (segments.length === 1) return true;
+    if (secondSegment === "knowledge") return segments.length === 2 || (segments.length === 3 && segments[2] === "new");
+
+    return false;
 };
 
 const navLinkClass = (active: boolean) =>
@@ -837,6 +842,13 @@ const SidebarContent = ({
         };
     }, [updateScrollThumb]);
 
+    const resolveNavHref = (href: string) => {
+        if (!workspace.slug || workspace.slug === "workspace") return href;
+        if (href === "/") return `/${workspace.slug}`;
+        if (href === "/knowledge" || href === "/knowledge/new") return `/${workspace.slug}${href}`;
+        return href;
+    };
+
     return (
         <div className="relative flex h-full flex-col overflow-visible">
             <div
@@ -869,7 +881,7 @@ const SidebarContent = ({
                     </div>
 
                     <Link
-                        href="/books/new"
+                        href={resolveNavHref("/knowledge/new")}
                         onClick={onNavigate}
                         className="mb-4 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[#d97757] px-3 text-[13px] font-semibold text-white shadow-[var(--shadow-soft-sm)] transition hover:bg-[#c96849]"
                     >
@@ -882,10 +894,11 @@ const SidebarContent = ({
                             Manage
                         </p>
                         {primaryNavItems.map(({ label, href, icon: Icon }) => {
-                            const active = isActivePath(pathName, href);
+                            const resolvedHref = resolveNavHref(href);
+                            const active = isActivePath(pathName, resolvedHref);
 
                             return (
-                                <Link href={href} onClick={onNavigate} key={label} className={navLinkClass(active)}>
+                                <Link href={resolvedHref} onClick={onNavigate} key={label} className={navLinkClass(active)}>
                                     <Icon className="size-4 shrink-0" />
                                     <span className="truncate">{label}</span>
                                 </Link>
@@ -906,7 +919,7 @@ const SidebarContent = ({
                             Try
                         </p>
                         {setupNavItems.map(({ label, href, icon: Icon }) => (
-                            <Link href={href} onClick={onNavigate} key={label} className={navLinkClass(isActivePath(pathName, href))}>
+                            <Link href={resolveNavHref(href)} onClick={onNavigate} key={label} className={navLinkClass(isActivePath(pathName, resolveNavHref(href)))}>
                                 <Icon className="size-4 shrink-0" />
                                 <span>{label}</span>
                             </Link>
@@ -1132,7 +1145,7 @@ const Navbar = () => {
 
                 <div className="flex items-center gap-2">
                     <Link
-                        href="/books/new"
+                        href={activeWorkspaceSlug ? `/${activeWorkspaceSlug}/knowledge/new` : "/knowledge/new"}
                         className="inline-flex size-9 items-center justify-center rounded-lg bg-[#d97757] text-white"
                     >
                         <Upload className="size-4" />
@@ -1170,3 +1183,4 @@ const Navbar = () => {
 };
 
 export default Navbar;
+

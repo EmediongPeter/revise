@@ -22,7 +22,10 @@ const reviewItems = [
     },
 ];
 
-const HeroSection = () => {
+const HeroSection = ({ workspaceSlug }: { workspaceSlug: string }) => {
+    const uploadHref = `/${workspaceSlug}/knowledge/new`;
+    const reportsHref = "/reports";
+
     return (
         <section className="mb-6 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
             <div className="dashboard-panel overflow-hidden">
@@ -40,7 +43,7 @@ const HeroSection = () => {
                         </p>
                     </div>
 
-                    <Link href="/books/new" className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--text-primary)] px-4 text-sm font-semibold text-[var(--text-inverse)] shadow-sm transition hover:bg-[var(--accent-warm-hover)]">
+                    <Link href={uploadHref} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--text-primary)] px-4 text-sm font-semibold text-[var(--text-inverse)] shadow-sm transition hover:bg-[var(--accent-warm-hover)]">
                         Upload source
                         <ArrowRight className="size-4" />
                     </Link>
@@ -67,7 +70,7 @@ const HeroSection = () => {
                         <p className="text-sm font-semibold text-[var(--text-primary)]">Manager queue</p>
                         <p className="mt-1 text-xs text-[var(--text-muted)]">Sessions and gaps that need attention.</p>
                     </div>
-                    <Link href="/reports" className="text-sm font-medium text-[var(--text-primary)] hover:underline">
+                    <Link href={reportsHref} className="text-sm font-medium text-[var(--text-primary)] hover:underline">
                         View reports
                     </Link>
                 </div>
@@ -103,3 +106,4 @@ const HeroSection = () => {
 };
 
 export default HeroSection;
+

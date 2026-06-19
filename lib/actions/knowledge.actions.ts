@@ -4,11 +4,14 @@ import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { Types } from "mongoose";
 import { connectToDatabase } from "@/database/mongoose";
+import KnowledgeChunk from "@/database/models/knowledge-chunk.model";
 import KnowledgeSource from "@/database/models/knowledge-source.model";
 import Team from "@/database/models/team.model";
 import UserProfile from "@/database/models/user-profile.model";
 import Workspace from "@/database/models/workspace.model";
 import WorkspaceMember from "@/database/models/workspace-member.model";
+import { ACCEPTED_KNOWLEDGE_SOURCE_TYPES, MAX_KNOWLEDGE_SOURCE_SIZE } from "@/lib/constants";
+import { parseKnowledgeFile } from "@/lib/knowledge/parse";
 import { serializeData } from "@/lib/utils";
 import type {
     IKnowledgeSource,
@@ -64,6 +67,15 @@ export type CreateKnowledgeSourceInput = {
     externalUrl?: string;
     externalId?: string;
     replacesSourceId?: string;
+};
+
+export type UploadKnowledgeSourceInput = Omit<
+    CreateKnowledgeSourceInput,
+    "fileName" | "fileUrl" | "fileBlobKey" | "mimeType" | "fileSize" | "origin"
+> & {
+    file: File;
+    fileUrl: string;
+    fileBlobKey: string;
 };
 
 export type ListKnowledgeSourcesInput = {
@@ -437,4 +449,80 @@ export const archiveKnowledgeSource = async (
     sourceId: string,
 ): Promise<ActionResult<KnowledgeSourceSummary>> => {
     return updateKnowledgeSourceStatus({ sourceId, status: "archived" });
+};
+
+export const processUploadedKnowledgeSource = async (
+    input: UploadKnowledgeSourceInput,
+): Promise<ActionResult<KnowledgeSourceSummary>> => {
+    if (!ACCEPTED_KNOWLEDGE_SOURCE_TYPES.includes(input.file.type)) {
+        return { success: false, error: "Upload a PDF, TXT, or Markdown source file." };
+    }
+
+    if (input.file.size > MAX_KNOWLEDGE_SOURCE_SIZE) {
+        return { success: false, error: "Knowledge source must be 25MB or smaller." };
+    }
+
+    const sourceResult = await createKnowledgeSourceMetadata({
+        ...input,
+        origin: "manual-upload",
+        fileName: input.file.name,
+        fileUrl: input.fileUrl,
+        fileBlobKey: input.fileBlobKey,
+        mimeType: input.file.type,
+        fileSize: input.file.size,
+    });
+
+    if (!sourceResult.success) {
+        return sourceResult;
+    }
+
+    const access = await getActiveWorkspaceAccess();
+
+    if ("error" in access) {
+        return { success: false, error: access.error };
+    }
+
+    await updateKnowledgeSourceStatus({ sourceId: sourceResult.data._id, status: "processing" });
+
+    try {
+        const parsed = await parseKnowledgeFile(input.file);
+
+        if (parsed.chunks.length === 0) {
+            throw new Error("No readable text was found in this source.");
+        }
+
+        await KnowledgeChunk.deleteMany({ sourceId: sourceResult.data._id });
+        await KnowledgeChunk.insertMany(
+            parsed.chunks.map((chunk) => ({
+                workspaceId: access.workspace._id,
+                sourceId: sourceResult.data._id,
+                teamIds: sourceResult.data.teamIds.map((teamId) => new Types.ObjectId(teamId)),
+                scope: sourceResult.data.scope,
+                content: chunk.content,
+                chunkIndex: chunk.chunkIndex,
+                pageNumber: chunk.pageNumber,
+                sectionTitle: chunk.sectionTitle,
+                wordCount: chunk.wordCount,
+                sourceVersion: sourceResult.data.version,
+                embeddingStatus: "pending",
+                metadata: {
+                    parser: "phase-2-upload",
+                    characterCount: parsed.characterCount,
+                    totalSourceWordCount: parsed.wordCount,
+                },
+            })),
+        );
+
+        const readyResult = await updateKnowledgeSourceStatus({ sourceId: sourceResult.data._id, status: "ready" });
+        return readyResult;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to process source.";
+        await updateKnowledgeSourceStatus({
+            sourceId: sourceResult.data._id,
+            status: "failed",
+            failureReason: message,
+        });
+
+        return { success: false, error: message };
+    }
 };

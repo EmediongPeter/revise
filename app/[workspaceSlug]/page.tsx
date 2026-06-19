@@ -27,7 +27,7 @@ const WorkspaceDashboardPage = async ({
         redirect("/wizard?utm_first_workspace=true");
     }
 
-    return <DashboardHome query={query} />;
+    return <DashboardHome query={query} workspaceSlug={workspaceSlug} />;
 };
 
 export default WorkspaceDashboardPage;
