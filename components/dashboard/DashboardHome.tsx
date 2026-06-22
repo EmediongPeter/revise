@@ -14,10 +14,11 @@ import {
     UsersRound,
 } from "lucide-react";
 
-const DashboardHome = async ({ query }: { query?: string }) => {
+const DashboardHome = async ({ query, workspaceSlug }: { query?: string; workspaceSlug: string }) => {
     const bookResults = await getAllBooks(query);
     const books = bookResults.success ? bookResults.data ?? [] : [];
     const totalSegments = books.reduce((acc, book) => acc + (book.totalSegments || 0), 0);
+    const uploadHref = `/${workspaceSlug}/knowledge/new`;
 
     return (
         <DashboardRevealGate>
@@ -33,7 +34,7 @@ const DashboardHome = async ({ query }: { query?: string }) => {
                                     <UsersRound className="size-4" />
                                     Invite trainee
                                 </Link>
-                                <Link href="/books/new" className="dashboard-primary-action">
+                                <Link href={uploadHref} className="dashboard-primary-action">
                                     <FileText className="size-4" />
                                     Upload source
                                 </Link>
@@ -43,7 +44,7 @@ const DashboardHome = async ({ query }: { query?: string }) => {
                 </div>
 
                 <div className="dashboard-reveal-item">
-                    <HeroSection />
+                    <HeroSection workspaceSlug={workspaceSlug} />
                 </div>
 
                 <section className="dashboard-reveal-item mb-8 grid gap-3 md:grid-cols-4">
@@ -86,7 +87,7 @@ const DashboardHome = async ({ query }: { query?: string }) => {
                             icon={FileText}
                             title="Upload your first company source"
                             description="Start with one onboarding PDF, SOP, or internal guide. Revise will prepare it for voice practice and suggested training modules."
-                            action={{ label: "Upload source", href: "/books/new" }}
+                            action={{ label: "Upload source", href: uploadHref }}
                         />
                     )}
                 </div>
@@ -96,3 +97,4 @@ const DashboardHome = async ({ query }: { query?: string }) => {
 };
 
 export default DashboardHome;
+

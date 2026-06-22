@@ -108,7 +108,7 @@ const UserMenu = () => {
                 aria-haspopup="menu"
                 aria-expanded={open}
                 onClick={() => setOpen((current) => !current)}
-                className="flex w-full items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-2 text-left shadow-[var(--shadow-soft-sm)] transition hover:bg-[var(--surface-hover)]"
+                className="flex w-full items-center gap-2 rounded-xl border border-[var(--border-subtle)] p-2 text-left shadow-[var(--shadow-soft-sm)] transition hover:bg-[var(--surface-hover)] cursor-pointer"
             >
                 <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--accent-soft)] text-[var(--text-primary)]">
                     {user?.imageUrl ? (

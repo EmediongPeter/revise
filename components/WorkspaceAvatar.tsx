@@ -1,19 +1,27 @@
 import { cn } from "@/lib/utils";
 
-const palettes = [
-    ["#22c55e", "#16a34a", "#052e16"],
-    ["#38bdf8", "#2563eb", "#0f172a"],
-    ["#f97316", "#d97757", "#431407"],
-    ["#a78bfa", "#7c3aed", "#1e1b4b"],
-    ["#f43f5e", "#db2777", "#4c0519"],
-    ["#14b8a6", "#0f766e", "#042f2e"],
-];
-
 const hashSeed = (seed: string) =>
     seed.split("").reduce((hash, char) => {
         const nextHash = (hash << 5) - hash + char.charCodeAt(0);
         return nextHash | 0;
     }, 0);
+
+const createAvatarTheme = (seed: string) => {
+    const hash = Math.abs(hashSeed(seed || "revise"));
+    const hue = hash % 360;
+    const secondaryHue = (hue + 80 + (hash % 90)) % 360;
+    const accentHue = (hue + 190 + (hash % 45)) % 360;
+
+    return {
+        hash,
+        pattern: hash % 4,
+        background: [
+            `hsl(${hue} 82% 56%)`,
+            `hsl(${secondaryHue} 74% 46%)`,
+            `hsl(${accentHue} 68% 18%)`,
+        ],
+    };
+};
 
 const WorkspaceAvatar = ({
     seed,
@@ -26,15 +34,19 @@ const WorkspaceAvatar = ({
     size?: "sm" | "md";
     className?: string;
 }) => {
-    const hash = Math.abs(hashSeed(seed || name || "revise"));
-    const palette = palettes[hash % palettes.length];
-    const activeDots = Array.from({ length: 49 }, (_, index) => {
-        const bit = (hash >> (index % 24)) & 1;
+    const theme = createAvatarTheme(seed || name);
+    const cells = Array.from({ length: 49 }, (_, index) => {
         const row = Math.floor(index / 7);
         const col = index % 7;
-        const distance = Math.abs(row - 3) + Math.abs(col - 3);
+        const bit = (theme.hash >> (index % 24)) & 1;
+        const diagonal = (row + col + theme.hash) % 3 === 0;
+        const ring = Math.abs(row - 3) + Math.abs(col - 3) === 2;
+        const stripe = theme.pattern % 2 === 0 ? row % 2 === theme.hash % 2 : col % 2 === theme.hash % 2;
 
-        return bit === 1 || distance < 2 || (index + hash) % 5 === 0;
+        if (theme.pattern === 0) return bit === 1 || ring;
+        if (theme.pattern === 1) return diagonal || bit === 1;
+        if (theme.pattern === 2) return stripe || ring;
+        return bit === 1 || (row === col) || (row + col === 6);
     });
 
     return (
@@ -46,11 +58,19 @@ const WorkspaceAvatar = ({
                 className,
             )}
             style={{
-                background: `radial-gradient(circle at 30% 25%, ${palette[0]}, ${palette[1]} 54%, ${palette[2]})`,
+                background: `radial-gradient(circle at 24% 18%, ${theme.background[0]}, ${theme.background[1]} 52%, ${theme.background[2]})`,
             }}
         >
-            <span className="absolute inset-0 bg-[radial-gradient(circle_at_38%_20%,rgba(255,255,255,0.42),transparent_34%)]" />
-            {activeDots.map((isActive, index) => (
+            <span
+                className="absolute inset-0 opacity-75"
+                style={{
+                    background:
+                        theme.pattern % 2 === 0
+                            ? "linear-gradient(135deg, rgba(255,255,255,0.28), transparent 42%, rgba(0,0,0,0.18))"
+                            : "radial-gradient(circle at 68% 32%, rgba(255,255,255,0.36), transparent 28%)",
+                }}
+            />
+            {cells.map((isActive, index) => (
                 <span
                     key={`${seed}-${index}`}
                     className={cn(

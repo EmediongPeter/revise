@@ -1,13 +1,12 @@
 import { redirect } from "next/navigation";
-import WorkspaceSettingsClient from "@/components/settings/WorkspaceSettingsClient";
 import { getWorkspaceTeamData } from "@/lib/actions/workspace.actions";
 
-export default async function SettingsPage() {
+export default async function NewKnowledgeRedirectPage() {
     const result = await getWorkspaceTeamData();
 
     if (!result.success) {
         redirect("/onboarding");
     }
 
-    return <WorkspaceSettingsClient initialData={result.data} />;
+    redirect(`/${result.data.activeWorkspace.slug}/knowledge/new`);
 }

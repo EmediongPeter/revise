@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import DashboardHome from "@/components/dashboard/DashboardHome";
 import { getOnboardingStatus } from "@/lib/actions/onboarding.actions";
+import { getActivationWizardState } from "@/lib/actions/wizard.actions";
 
 const WorkspaceDashboardPage = async ({
     params,
@@ -20,7 +21,13 @@ const WorkspaceDashboardPage = async ({
         notFound();
     }
 
-    return <DashboardHome query={query} />;
+    const wizardState = await getActivationWizardState();
+
+    if (wizardState.success && !wizardState.data.completed && !wizardState.data.skipped) {
+        redirect("/wizard?utm_first_workspace=true");
+    }
+
+    return <DashboardHome query={query} workspaceSlug={workspaceSlug} />;
 };
 
 export default WorkspaceDashboardPage;

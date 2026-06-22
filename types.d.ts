@@ -75,6 +75,9 @@ export interface IWorkspace extends Document {
     trainingGoals: string[];
     googleDriveConnected: boolean;
     uploadedSourceName?: string;
+    activationWizardCompletedStepIds?: string[];
+    activationWizardSkippedAt?: Date;
+    activationWizardCompletedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -102,6 +105,110 @@ export interface ITeam extends Document {
     description?: string;
     createdByClerkId: string;
     isDefault: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export type KnowledgeSourceType =
+    | "sop"
+    | "handbook"
+    | "sales-script"
+    | "support-policy"
+    | "onboarding-guide"
+    | "compliance-policy"
+    | "knowledge-base"
+    | "other";
+
+export type KnowledgeSourceScope = "workspace" | "teams";
+export type KnowledgeSourceStatus = "uploaded" | "processing" | "ready" | "failed" | "archived";
+export type KnowledgeSourceOrigin = "manual-upload" | "google-drive" | "notion" | "sharepoint" | "url" | "api";
+export type KnowledgeChunkStatus = "pending" | "embedded" | "failed";
+export type TrainingModuleStatus = "draft" | "ready" | "archived";
+export type TrainingModuleDifficulty = "intro" | "standard" | "advanced";
+export type PracticeScenarioStatus = "draft" | "ready" | "archived";
+
+export interface IKnowledgeSource extends Document {
+    _id: Types.ObjectId;
+    workspaceId: Types.ObjectId;
+    teamIds: Types.ObjectId[];
+    scope: KnowledgeSourceScope;
+    title: string;
+    description?: string;
+    sourceType: KnowledgeSourceType;
+    origin: KnowledgeSourceOrigin;
+    status: KnowledgeSourceStatus;
+    fileName?: string;
+    fileUrl?: string;
+    fileBlobKey?: string;
+    mimeType?: string;
+    fileSize?: number;
+    externalUrl?: string;
+    externalId?: string;
+    version: number;
+    replacesSourceId?: Types.ObjectId;
+    isCurrentVersion: boolean;
+    failureReason?: string;
+    createdByClerkId: string;
+    updatedByClerkId?: string;
+    archivedAt?: Date;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface IKnowledgeChunk extends Document {
+    _id: Types.ObjectId;
+    workspaceId: Types.ObjectId;
+    sourceId: Types.ObjectId;
+    teamIds: Types.ObjectId[];
+    scope: KnowledgeSourceScope;
+    content: string;
+    chunkIndex: number;
+    pageNumber?: number;
+    sectionTitle?: string;
+    wordCount: number;
+    tokenCount?: number;
+    sourceVersion: number;
+    embeddingStatus: KnowledgeChunkStatus;
+    embeddingModel?: string;
+    metadata?: Record<string, unknown>;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface ITrainingModule extends Document {
+    _id: Types.ObjectId;
+    workspaceId: Types.ObjectId;
+    teamIds: Types.ObjectId[];
+    sourceIds: Types.ObjectId[];
+    title: string;
+    description?: string;
+    objective?: string;
+    difficulty: TrainingModuleDifficulty;
+    status: TrainingModuleStatus;
+    estimatedMinutes?: number;
+    createdByClerkId: string;
+    updatedByClerkId?: string;
+    archivedAt?: Date;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface IPracticeScenario extends Document {
+    _id: Types.ObjectId;
+    workspaceId: Types.ObjectId;
+    moduleId: Types.ObjectId;
+    teamIds: Types.ObjectId[];
+    sourceIds: Types.ObjectId[];
+    title: string;
+    situation: string;
+    traineePrompt: string;
+    idealOutcome?: string;
+    evaluationRubric: string[];
+    status: PracticeScenarioStatus;
+    sortOrder: number;
+    createdByClerkId: string;
+    updatedByClerkId?: string;
+    archivedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }

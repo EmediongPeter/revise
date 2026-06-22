@@ -19,7 +19,7 @@ export default async function ModulesPage({ searchParams }: { searchParams: Prom
                         Build scenario-based training from company documents. Each module becomes a source-backed practice room for interns and junior staff.
                     </p>
                 </div>
-                <Link href="/books/new" className="dashboard-primary-action">
+                <Link href="/knowledge/new" className="dashboard-primary-action">
                     <FileText className="size-4" />
                     Upload source
                 </Link>
@@ -53,7 +53,7 @@ export default async function ModulesPage({ searchParams }: { searchParams: Prom
                     <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
                         Upload one onboarding source. Revise will suggest voice practice modules from the material.
                     </p>
-                    <Link href="/books/new" className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[var(--text-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--text-inverse)] shadow-sm transition hover:bg-[var(--accent-warm-hover)]">
+                    <Link href="/knowledge/new" className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[var(--text-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--text-inverse)] shadow-sm transition hover:bg-[var(--accent-warm-hover)]">
                         Upload source
                         <ArrowUpRight className="size-4" />
                     </Link>
@@ -62,3 +62,4 @@ export default async function ModulesPage({ searchParams }: { searchParams: Prom
         </main>
     );
 }
+

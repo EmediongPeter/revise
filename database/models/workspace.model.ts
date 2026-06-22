@@ -12,6 +12,9 @@ const WorkspaceSchema = new Schema<IWorkspace>(
         trainingGoals: [{ type: String }],
         googleDriveConnected: { type: Boolean, required: true, default: false },
         uploadedSourceName: { type: String },
+        activationWizardCompletedStepIds: [{ type: String }],
+        activationWizardSkippedAt: { type: Date },
+        activationWizardCompletedAt: { type: Date },
     },
     { timestamps: true },
 );
