@@ -1,3 +1,5 @@
+import { AI_CHUNK_OVERLAP_TOKENS, AI_CHUNK_TARGET_TOKENS } from "@/lib/ai/config";
+
 export type ParsedKnowledgeChunk = {
     content: string;
     chunkIndex: number;
@@ -21,10 +23,13 @@ const normalizeText = (value: string) =>
 
 const getWordCount = (value: string) => value.split(/\s+/).filter(Boolean).length;
 
+const tokenTargetToWordTarget = (tokens: number) => Math.max(120, Math.floor(tokens * 0.75));
+const tokenOverlapToWordOverlap = (tokens: number) => Math.max(20, Math.floor(tokens * 0.75));
+
 export const splitKnowledgeText = (
     blocks: TextBlock[],
-    chunkSize = 500,
-    overlapSize = 75,
+    chunkSize = tokenTargetToWordTarget(AI_CHUNK_TARGET_TOKENS),
+    overlapSize = tokenOverlapToWordOverlap(AI_CHUNK_OVERLAP_TOKENS),
 ): ParsedKnowledgeChunk[] => {
     if (chunkSize <= 0) throw new Error("chunkSize must be greater than 0");
     if (overlapSize < 0 || overlapSize >= chunkSize) {

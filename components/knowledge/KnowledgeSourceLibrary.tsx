@@ -1,21 +1,14 @@
 import Link from "next/link";
 import {
-    Archive,
-    BookOpenCheck,
-    CheckCircle2,
-    Clock3,
-    FileText,
-    Filter,
-    Layers3,
     Search,
-    TriangleAlert,
-    Upload,
-    Users,
+    SlidersHorizontal,
 } from "lucide-react";
-import { EmptyState, MetricCard, PageHeader, StatusBadge } from "@/components/dashboard/DashboardPrimitives";
+import KnowledgeSourceOperationsTable from "@/components/knowledge/KnowledgeSourceOperationsTable";
+import NewSourceTrigger from "@/components/knowledge/NewSourceTrigger";
+import KnowledgeSourceWorkspaceState from "@/components/knowledge/KnowledgeSourceWorkspaceState";
 import { listKnowledgeSources } from "@/lib/actions/knowledge.actions";
 import { getWorkspaceTeamData } from "@/lib/actions/workspace.actions";
-import type { KnowledgeSourceScope, KnowledgeSourceStatus, KnowledgeSourceType } from "@/types";
+import type { KnowledgeSourceStatus, KnowledgeSourceType } from "@/types";
 import type { KnowledgeSourceSummary } from "@/lib/actions/knowledge.actions";
 
 const sourceTypeLabels: Record<string, string> = {
@@ -30,42 +23,12 @@ const sourceTypeLabels: Record<string, string> = {
 };
 
 const statusLabels: Record<KnowledgeSourceStatus | "all", string> = {
-    all: "All statuses",
+    all: "All sources",
     uploaded: "Uploaded",
     processing: "Processing",
     ready: "Ready",
     failed: "Failed",
     archived: "Archived",
-};
-
-const scopeLabels: Record<KnowledgeSourceScope | "all", string> = {
-    all: "All scopes",
-    workspace: "Entire workspace",
-    teams: "Specific teams",
-};
-
-const statusTone = (status: string): "neutral" | "success" | "warning" | "info" => {
-    if (status === "ready") return "success";
-    if (status === "failed") return "warning";
-    if (status === "processing") return "info";
-    return "neutral";
-};
-
-const formatDate = (value?: string) => {
-    if (!value) return "Not updated yet";
-
-    return new Intl.DateTimeFormat("en", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-    }).format(new Date(value));
-};
-
-const formatFileSize = (value?: number) => {
-    if (!value) return "Unknown size";
-    if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
-
-    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 };
 
 const normalizeFilterValue = <T extends string>(value: string | undefined, allowed: readonly T[], fallback: T) =>
@@ -89,6 +52,34 @@ const matchesSearch = (source: KnowledgeSourceSummary, query: string) => {
     return searchable.includes(query.toLowerCase());
 };
 
+const SourceStackIllustration = () => (
+    <div className="relative mx-auto mb-8 flex h-24 w-28 items-center justify-center text-[var(--text-muted)]">
+        <svg viewBox="0 0 112 96" className="h-full w-full" fill="none" aria-hidden="true">
+            <path d="M29 33.5 56 19l27 14.5L56 48 29 33.5Z" stroke="currentColor" strokeWidth="2" />
+            <path d="M29 49.5 56 35l27 14.5L56 64 29 49.5Z" stroke="currentColor" strokeWidth="2" opacity=".78" />
+            <path d="M29 65.5 56 51l27 14.5L56 80 29 65.5Z" stroke="currentColor" strokeWidth="2" opacity=".55" />
+            <path d="M56 48v32M29 33.5v32M83 33.5v32" stroke="currentColor" strokeWidth="2" opacity=".35" />
+        </svg>
+    </div>
+);
+
+const shortcut = (
+    <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-semibold text-white/90">
+        <kbd className="rounded bg-white/20 px-1.5 py-0.5">N</kbd>
+        <span>then</span>
+        <kbd className="rounded bg-white/20 px-1.5 py-0.5">S</kbd>
+    </span>
+);
+
+const buildStatusHref = (workspaceSlug: string, status: string, query: string) => {
+    const params = new URLSearchParams();
+    if (status !== "all") params.set("status", status);
+    if (query) params.set("q", query);
+    const suffix = params.toString();
+
+    return `/${workspaceSlug}/knowledge${suffix ? `?${suffix}` : ""}`;
+};
+
 const KnowledgeSourceLibrary = async ({
     workspaceSlug,
     filters = {},
@@ -108,129 +99,86 @@ const KnowledgeSourceLibrary = async ({
     ]);
     const sources = sourceResult.success ? sourceResult.data : [];
     const teams = workspaceResult.success ? workspaceResult.data.teams : [];
-    const teamNameById = new Map(teams.map((team) => [team._id, team.name]));
-    const uploadHref = `/${workspaceSlug}/knowledge/new`;
     const activeStatus = normalizeFilterValue(filters.status, ["all", "uploaded", "processing", "ready", "failed", "archived"] as const, "all");
-    const activeScope = normalizeFilterValue(filters.scope, ["all", "workspace", "teams"] as const, "all");
     const activeSourceType = normalizeFilterValue(
         filters.sourceType,
         ["all", ...Object.keys(sourceTypeLabels)] as Array<KnowledgeSourceType | "all">,
         "all",
     );
-    const activeTeamId = teams.some((team) => team._id === filters.teamId) ? filters.teamId || "all" : "all";
     const searchQuery = filters.q?.trim() || "";
-    const currentSources = sources.filter((source) => source.status !== "archived");
-    const teamScopedCount = currentSources.filter((source) => source.scope === "teams").length;
     const filteredSources = sources.filter((source) => {
         if (!matchesSearch(source, searchQuery)) return false;
         if (activeStatus !== "all" && source.status !== activeStatus) return false;
-        if (activeScope !== "all" && source.scope !== activeScope) return false;
         if (activeSourceType !== "all" && source.sourceType !== activeSourceType) return false;
-        if (activeTeamId !== "all") {
-            return source.scope === "workspace" || source.teamIds.includes(activeTeamId);
-        }
 
         return true;
     });
+    const statusOptions: Array<KnowledgeSourceStatus | "all"> = ["all", "ready", "processing", "failed", "archived"];
 
     return (
         <main className="wrapper container">
-            <PageHeader
-                eyebrow="Sources"
-                title="Company source library"
-                description="Manage the SOPs, handbooks, scripts, policies, and guides that power source-backed practice."
-                actions={
-                    <Link href={uploadHref} className="dashboard-primary-action">
-                        <Upload className="size-4" />
-                        Upload source
-                    </Link>
-                }
-            />
+            <KnowledgeSourceWorkspaceState />
 
-            {sources.length > 0 && (
-                <>
-                    <section className="dashboard-grid dashboard-grid-4 mb-6">
-                        <MetricCard
-                            icon={Layers3}
-                            label="Active sources"
-                            value={currentSources.length}
-                            detail={`${sources.length - currentSources.length} archived`}
-                        />
-                        <MetricCard
-                            icon={CheckCircle2}
-                            label="Training ready"
-                            value={currentSources.filter((source) => source.status === "ready").length}
-                            detail="Parsed and chunked"
-                        />
-                        <MetricCard
-                            icon={Users}
-                            label="Team-scoped"
-                            value={teamScopedCount}
-                            detail="Limited to selected teams"
-                        />
-                        <MetricCard
-                            icon={TriangleAlert}
-                            label="Needs attention"
-                            value={currentSources.filter((source) => source.status === "failed" || source.status === "processing").length}
-                            detail="Processing or failed"
-                        />
-                    </section>
+            <header className="mb-0 flex h-14 items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+                <div className="flex items-center gap-2">
+                    <h1 className="text-[15px] font-semibold text-[var(--text-primary)]">Sources</h1>
+                    <span className="rounded-full border border-[var(--border-subtle)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
+                        {sources.length}
+                    </span>
+                </div>
+                <NewSourceTrigger />
+            </header>
 
-                    <section className="mb-5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-soft-sm)]">
-                        <form className="grid gap-3 lg:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.8fr_auto] lg:items-end">
-                            <label className="block">
-                                <span className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                                    <Search className="size-3.5" />
-                                    Search
-                                </span>
-                                <input
-                                    name="q"
-                                    defaultValue={searchQuery}
-                                    placeholder="Search title, description, or file"
-                                    className="h-11 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[#d97757]"
-                                />
-                            </label>
+            <section className="flex min-h-[calc(100vh-8rem)] flex-col">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-3">
+                    <nav className="flex flex-wrap items-center gap-2" aria-label="Source views">
+                        {statusOptions.map((status) => {
+                            const active = activeStatus === status;
 
-                            <label className="block">
-                                <span className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                                    <Filter className="size-3.5" />
-                                    Status
-                                </span>
-                                <select name="status" defaultValue={activeStatus} className="h-11 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 text-sm text-[var(--text-primary)] outline-none focus:border-[#d97757]">
-                                    {Object.entries(statusLabels).map(([value, label]) => (
-                                        <option key={value} value={value}>
-                                            {label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                            return (
+                                <Link
+                                    key={status}
+                                    href={buildStatusHref(workspaceSlug, status, searchQuery)}
+                                    className={`inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition ${
+                                        active
+                                            ? "border-[var(--border-medium)] bg-[var(--surface-hover)] text-[var(--text-primary)] shadow-[var(--shadow-soft-sm)]"
+                                            : "border-transparent text-[var(--text-muted)] hover:border-[var(--border-subtle)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+                                    }`}
+                                >
+                                    {statusLabels[status]}
+                                </Link>
+                            );
+                        })}
+                    </nav>
 
-                            <label className="block">
-                                <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Scope</span>
-                                <select name="scope" defaultValue={activeScope} className="h-11 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 text-sm text-[var(--text-primary)] outline-none focus:border-[#d97757]">
-                                    {Object.entries(scopeLabels).map(([value, label]) => (
-                                        <option key={value} value={value}>
-                                            {label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-
-                            <label className="block">
-                                <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Team</span>
-                                <select name="teamId" defaultValue={activeTeamId} className="h-11 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 text-sm text-[var(--text-primary)] outline-none focus:border-[#d97757]">
-                                    <option value="all">All teams</option>
-                                    {teams.map((team) => (
-                                        <option key={team._id} value={team._id}>
-                                            {team.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-
-                            <label className="block">
-                                <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Type</span>
-                                <select name="sourceType" defaultValue={activeSourceType} className="h-11 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 text-sm text-[var(--text-primary)] outline-none focus:border-[#d97757]">
+                    <div className="flex items-center gap-2">
+                        <form className="relative">
+                            {activeStatus !== "all" && <input type="hidden" name="status" value={activeStatus} />}
+                            {activeSourceType !== "all" && <input type="hidden" name="sourceType" value={activeSourceType} />}
+                            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--text-muted)]" />
+                            <input
+                                name="q"
+                                defaultValue={searchQuery}
+                                placeholder="Search"
+                                className="h-8 w-48 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-secondary)] pl-8 pr-3 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--border-medium)]"
+                            />
+                        </form>
+                        <details className="group relative">
+                            <summary className="flex size-8 cursor-pointer list-none items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-muted)] shadow-[var(--shadow-soft-sm)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)] [&::-webkit-details-marker]:hidden">
+                                <SlidersHorizontal className="size-4" />
+                                <span className="sr-only">Filter sources</span>
+                            </summary>
+                            <form className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-2 shadow-[var(--shadow-soft-lg)]">
+                                {activeStatus !== "all" && <input type="hidden" name="status" value={activeStatus} />}
+                                {searchQuery && <input type="hidden" name="q" value={searchQuery} />}
+                                <label className="block px-2 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                                    Source type
+                                </label>
+                                <select
+                                    name="sourceType"
+                                    defaultValue={activeSourceType}
+                                    className="mb-2 h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-2 text-sm text-[var(--text-primary)] outline-none"
+                                >
                                     <option value="all">All types</option>
                                     {Object.entries(sourceTypeLabels).map(([value, label]) => (
                                         <option key={value} value={value}>
@@ -238,115 +186,60 @@ const KnowledgeSourceLibrary = async ({
                                         </option>
                                     ))}
                                 </select>
-                            </label>
-
-                            <button type="submit" className="dashboard-secondary-action h-11 justify-center">
-                                Apply
-                            </button>
-                        </form>
-                    </section>
-                </>
-            )}
-
-            {sources.length === 0 ? (
-                <EmptyState
-                    icon={BookOpenCheck}
-                    title="Upload your first knowledge source"
-                    description="Start with one SOP, handbook, or policy. Revise will parse it into training-ready knowledge chunks."
-                    action={{ label: "Upload source", href: uploadHref }}
-                />
-            ) : filteredSources.length === 0 ? (
-                <EmptyState
-                    icon={Search}
-                    title="No sources match these filters"
-                    description="Adjust the search or filters to find the policy, report, SOP, or guide you need."
-                    action={{ label: "Clear filters", href: `/${workspaceSlug}/knowledge` }}
-                />
-            ) : (
-                <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-soft-sm)]">
-                    <div className="grid grid-cols-[1.5fr_0.75fr_0.9fr_0.75fr] gap-4 border-b border-[var(--border-subtle)] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] max-lg:hidden">
-                        <span>Source</span>
-                        <span>Status</span>
-                        <span>Scope</span>
-                        <span>Storage</span>
+                                <button type="submit" className="h-9 w-full rounded-lg bg-[var(--text-primary)] text-sm font-semibold text-[var(--text-inverse)]">
+                                    Apply
+                                </button>
+                            </form>
+                        </details>
                     </div>
+                </div>
 
-                    {filteredSources.map((source) => {
-                        const scopedTeams = source.teamIds
-                            .map((teamId) => teamNameById.get(teamId) || "Unknown team")
-                            .filter(Boolean);
-                        const sourceTypeLabel = sourceTypeLabels[source.sourceType] || source.sourceType;
-
-                        return (
-                            <article
-                                key={source._id}
-                                className="grid gap-4 border-b border-[var(--border-subtle)] px-4 py-4 last:border-b-0 lg:grid-cols-[1.5fr_0.75fr_0.9fr_0.75fr] lg:items-center"
+                {sources.length === 0 ? (
+                    <section className="flex flex-1 items-center justify-center px-4 py-16">
+                        <div className="max-w-md text-left">
+                            <SourceStackIllustration />
+                            <h2 className="text-xl font-semibold text-[var(--text-primary)]">Sources</h2>
+                            <p className="mt-3 text-[15px] leading-6 text-[var(--text-muted)]">
+                                Sources are the company knowledge Revise uses to create training plans, practice scenarios, and readiness checks. Start with an SOP, handbook, sales script, or support policy.
+                            </p>
+                            <div className="mt-6 flex flex-wrap items-center gap-2">
+                                <NewSourceTrigger variant="primary">
+                                    Upload new source
+                                    {shortcut}
+                                </NewSourceTrigger>
+                                <Link
+                                    href="/wizard"
+                                    className="inline-flex h-9 items-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+                                >
+                                    View guide
+                                </Link>
+                            </div>
+                        </div>
+                    </section>
+                ) : filteredSources.length === 0 ? (
+                    <section className="flex flex-1 items-center justify-center px-4 py-16">
+                        <div className="max-w-sm text-center">
+                            <Search className="mx-auto mb-4 size-8 text-[var(--text-muted)]" />
+                            <h2 className="text-lg font-semibold text-[var(--text-primary)]">No matching sources</h2>
+                            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+                                Adjust the view, search, or type filter to find the source you need.
+                            </p>
+                            <Link
+                                href={`/${workspaceSlug}/knowledge`}
+                                className="mt-5 inline-flex h-9 items-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                             >
-                                <div className="min-w-0">
-                                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                                        <span className="rounded-full border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium text-[var(--text-muted)]">
-                                            {sourceTypeLabel}
-                                        </span>
-                                        <span className="rounded-full border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium text-[var(--text-muted)]">
-                                            v{source.version}
-                                        </span>
-                                        {source.status === "archived" && (
-                                            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium text-[var(--text-muted)]">
-                                                <Archive className="size-3" />
-                                                archived
-                                            </span>
-                                        )}
-                                    </div>
-                                    <h2 className="truncate text-base font-semibold text-[var(--text-primary)]">{source.title}</h2>
-                                    {source.description && (
-                                        <p className="mt-1 line-clamp-2 text-sm leading-6 text-[var(--text-muted)]">{source.description}</p>
-                                    )}
-                                    {source.failureReason && <p className="mt-2 text-sm text-amber-600">{source.failureReason}</p>}
-                                </div>
-
-                                <div>
-                                    <StatusBadge tone={statusTone(source.status)}>{statusLabels[source.status]}</StatusBadge>
-                                    <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-                                        <Clock3 className="size-3.5" />
-                                        {formatDate(source.updatedAt || source.createdAt)}
-                                    </p>
-                                </div>
-
-                                <div className="min-w-0">
-                                    {source.scope === "workspace" ? (
-                                        <span className="inline-flex rounded-full border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                                            Entire workspace
-                                        </span>
-                                    ) : (
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {scopedTeams.length > 0 ? (
-                                                scopedTeams.map((teamName) => (
-                                                    <span
-                                                        key={teamName}
-                                                        className="max-w-36 truncate rounded-full border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)]"
-                                                    >
-                                                        {teamName}
-                                                    </span>
-                                                ))
-                                            ) : (
-                                                <span className="text-sm text-[var(--text-muted)]">No teams selected</span>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="min-w-0 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-muted)]">
-                                    <div className="flex min-w-0 items-center gap-2">
-                                        <FileText className="size-4 shrink-0" />
-                                        <span className="truncate">{source.fileName || "Knowledge source"}</span>
-                                    </div>
-                                    <p className="mt-1 text-xs text-[var(--text-muted)]">{formatFileSize(source.fileSize)}</p>
-                                </div>
-                            </article>
-                        );
-                    })}
-                </section>
-            )}
+                                Clear filters
+                            </Link>
+                        </div>
+                    </section>
+                ) : (
+                    <KnowledgeSourceOperationsTable
+                        sources={filteredSources}
+                        teams={teams}
+                        workspaceSlug={workspaceSlug}
+                    />
+                )}
+            </section>
         </main>
     );
 };

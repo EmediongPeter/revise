@@ -1,18 +1,21 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+    serverExternalPackages: ["pdf-parse"],
     experimental: {
         serverActions: {
-            bodySizeLimit: '100mb',
-        }
+            bodySizeLimit: "100mb",
+        },
     },
     typescript: {
         ignoreBuildErrors: true,
     },
-    images: { remotePatterns: [
+    images: {
+        remotePatterns: [
             { protocol: 'https', hostname: 'covers.openlibrary.org' },
             { protocol: 'https', hostname: 'lspfdyhgsrgsxcju.public.blob.vercel-storage.com' },
-        ]}
+        ],
+    },
 };
 
 export default nextConfig;

@@ -6,6 +6,7 @@ import {
     MAX_IMAGE_SIZE,
     ACCEPTED_KNOWLEDGE_SOURCE_EXTENSIONS,
     ACCEPTED_KNOWLEDGE_SOURCE_TYPES,
+    MAX_KNOWLEDGE_SOURCE_FILES,
     MAX_KNOWLEDGE_SOURCE_SIZE,
 } from './constants';
 
@@ -43,10 +44,36 @@ export const KnowledgeSourceUploadSchema = z.object({
     ]),
     scope: z.enum(["workspace", "teams"]),
     teamIds: z.array(z.string()),
-    file: z.instanceof(File, { message: "Source file is required" })
-        .refine((file) => file.size <= MAX_KNOWLEDGE_SOURCE_SIZE, "File size must be less than 25MB")
-        .refine(hasAcceptedKnowledgeSourceType, "Only PDF, TXT, and Markdown files are accepted"),
+    files: z.array(z.instanceof(File, { message: "Source file is required" }))
+        .min(1, "Upload at least one source file")
+        .max(MAX_KNOWLEDGE_SOURCE_FILES, `Upload ${MAX_KNOWLEDGE_SOURCE_FILES} files or fewer at once`)
+        .refine(
+            (files) => files.every((file) => file.size <= MAX_KNOWLEDGE_SOURCE_SIZE),
+            "Each file must be less than 25MB",
+        )
+        .refine(
+            (files) => files.every(hasAcceptedKnowledgeSourceType),
+            "Only PDF, TXT, and Markdown files are accepted",
+        ),
 }).refine((value) => value.scope === "workspace" || value.teamIds.length > 0, {
     message: "Select at least one team or choose entire workspace",
     path: ["teamIds"],
+});
+
+const blueprintListSchema = z.array(z.string().trim().min(1)).max(24).default([]);
+
+export const TrainingBlueprintAISchema = z.object({
+    title: z.string().trim().min(2).max(140),
+    description: z.string().trim().max(500).optional(),
+    objective: z.string().trim().min(10).max(800),
+    keyTopics: blueprintListSchema,
+    requiredKnowledge: blueprintListSchema,
+    practiceScenarios: blueprintListSchema,
+    commonMistakes: blueprintListSchema,
+    assessmentQuestions: blueprintListSchema,
+    rolePlayPrompts: blueprintListSchema,
+    assessmentCriteria: blueprintListSchema,
+    recommendedAssignments: blueprintListSchema,
+    missingSections: blueprintListSchema,
+    sourceReferenceNotes: z.string().trim().max(1200).optional(),
 });

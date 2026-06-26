@@ -15,7 +15,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         const body = (await request.json()) as HandleUploadBody;
 
         const jsonResponse = await handleUpload({
-            token: process.env.bookified_READ_WRITE_TOKEN,
+            token: process.env.BLOB_READ_WRITE_TOKEN,
             body,
             request,
             onBeforeGenerateToken: async () => {
@@ -31,9 +31,6 @@ export async function POST(request: Request): Promise<NextResponse> {
                     maximumSizeInBytes: MAX_KNOWLEDGE_SOURCE_SIZE,
                     tokenPayload: JSON.stringify({ userId }),
                 };
-            },
-            onUploadCompleted: async ({ blob }) => {
-                console.log("Knowledge source uploaded to blob:", blob.url);
             },
         });
 

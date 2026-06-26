@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSignUp } from "@clerk/nextjs";
 import { ArrowRight, KeyRound, Loader2, Mail, Sparkles } from "lucide-react";
 import { FaGoogle } from "react-icons/fa";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getAuthErrorMessage } from "@/components/auth/AuthErrors";
@@ -21,7 +22,6 @@ const submitButtonClass =
     "h-[48px] w-full rounded-full bg-[var(--text-primary)] text-[15px] font-semibold text-[var(--text-inverse)] shadow-none hover:bg-[var(--accent-warm-hover)]";
 const backButtonClass =
     "cursor-pointer text-[15px] font-semibold text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text-primary)]";
-const errorClass = "rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm leading-5 text-red-500";
 
 const SignUpForm = () => {
     const router = useRouter();
@@ -34,16 +34,18 @@ const SignUpForm = () => {
     const [pendingVerification, setPendingVerification] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isOAuthSubmitting, setIsOAuthSubmitting] = useState<string | null>(null);
-    const [error, setError] = useState("");
+
+    const showAuthError = (message: string) => {
+        toast.error(message, { duration: 5000 });
+    };
 
     const resetToChoices = () => {
         setStep("choices");
-        setError("");
     };
 
     const completeSignUp = async (sessionId: string | null) => {
         if (!sessionId || !setActive) {
-            setError("Your account was created, but we could not start a session. Please sign in.");
+            showAuthError("Your account was created, but we could not start a session. Please sign in.");
             return;
         }
 
@@ -54,7 +56,6 @@ const SignUpForm = () => {
 
     const handleEmailContinue = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        setError("");
         setStep("password");
     };
 
@@ -63,7 +64,6 @@ const SignUpForm = () => {
         if (!isLoaded || !signUp) return;
 
         setIsSubmitting(true);
-        setError("");
 
         try {
             const result = await signUp.create({
@@ -79,7 +79,7 @@ const SignUpForm = () => {
             await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
             setPendingVerification(true);
         } catch (authError) {
-            setError(getAuthErrorMessage(authError));
+            showAuthError(getAuthErrorMessage(authError));
         } finally {
             setIsSubmitting(false);
         }
@@ -90,7 +90,6 @@ const SignUpForm = () => {
         if (!isLoaded || !signUp) return;
 
         setIsSubmitting(true);
-        setError("");
 
         try {
             const result = await signUp.attemptEmailAddressVerification({ code });
@@ -100,9 +99,9 @@ const SignUpForm = () => {
                 return;
             }
 
-            setError("We could not complete verification yet. Check the code and try again.");
+            showAuthError("We could not complete verification yet. Check the code and try again.");
         } catch (authError) {
-            setError(getAuthErrorMessage(authError));
+            showAuthError(getAuthErrorMessage(authError));
         } finally {
             setIsSubmitting(false);
         }
@@ -111,7 +110,6 @@ const SignUpForm = () => {
     const handleOAuth = async (strategy: EnabledOAuthStrategy) => {
         if (!isLoaded || !signUp) return;
 
-        setError("");
         setIsOAuthSubmitting(strategy);
 
         try {
@@ -122,7 +120,7 @@ const SignUpForm = () => {
             });
         } catch (authError) {
             setIsOAuthSubmitting(null);
-            setError(getAuthErrorMessage(authError));
+            showAuthError(getAuthErrorMessage(authError));
         }
     };
 
@@ -131,7 +129,6 @@ const SignUpForm = () => {
         if (!isLoaded || !signUp) return;
 
         setIsSubmitting(true);
-        setError("");
 
         try {
             await signUp.authenticateWithRedirect({
@@ -142,7 +139,7 @@ const SignUpForm = () => {
             } as never);
         } catch (authError) {
             setIsSubmitting(false);
-            setError(getAuthErrorMessage(authError));
+            showAuthError(getAuthErrorMessage(authError));
         }
     };
 
@@ -162,7 +159,6 @@ const SignUpForm = () => {
                         placeholder="123456"
                         className="h-[48px] w-full rounded-xl border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 text-center text-[17px] font-semibold tracking-[0.3em] text-[var(--text-primary)] shadow-none placeholder:text-[var(--text-muted)] focus-visible:ring-2 focus-visible:ring-[#d97757]/35"
                     />
-                    {error && <p className={errorClass}>{error}</p>}
                     <Button type="submit" className={submitButtonClass} disabled={!isLoaded || isSubmitting}>
                         {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : "Verify and continue"}
                         {!isSubmitting && <ArrowRight className="size-4" />}
@@ -212,7 +208,6 @@ const SignUpForm = () => {
                     placeholder="At least 8 characters..."
                     className={authInputClass}
                 />
-                {error && <p className={errorClass}>{error}</p>}
                 <div id="clerk-captcha" data-cl-theme="auto" data-cl-size="flexible" />
                 <Button type="submit" className={submitButtonClass} disabled={!isLoaded || isSubmitting}>
                     {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : "Create account"}
@@ -239,7 +234,6 @@ const SignUpForm = () => {
                     placeholder="name@company.com"
                     className={authInputClass}
                 />
-                {error && <p className={errorClass}>{error}</p>}
                 <Button type="submit" className={secondaryButtonClass} disabled={!isLoaded || isSubmitting}>
                     {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : "Continue with SAML SSO"}
                 </Button>
@@ -275,7 +269,6 @@ const SignUpForm = () => {
                 <KeyRound className="size-4" />
                 Continue with SAML SSO
             </Button>
-            {error && <p className={errorClass}>{error}</p>}
             <p className="px-4 pt-6 text-center text-[14px] font-medium leading-6 text-[var(--text-muted)]">
                 By signing up, you agree to our <span>Terms of Service</span> and{" "}
                 <span>Data Processing Agreement</span>.

@@ -6,6 +6,7 @@ import "./globals.css";
 import {Toaster} from "@/components/ui/sonner";
 import ThemeProvider from "@/components/ThemeProvider";
 import ClerkThemeProvider from "@/components/ClerkThemeProvider";
+import WorkspaceAppShell from "@/components/WorkspaceAppShell";
 
 const ibmPlexSerif = IBM_Plex_Serif({
     variable: "--font-ibm-plex-serif",
@@ -38,7 +39,7 @@ export default function RootLayout({
         <ThemeProvider>
           <ClerkThemeProvider>
               <Navbar />
-              {children}
+              <WorkspaceAppShell>{children}</WorkspaceAppShell>
               <Toaster />
           </ClerkThemeProvider>
         </ThemeProvider>

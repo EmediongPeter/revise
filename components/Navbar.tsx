@@ -145,14 +145,18 @@ const isKnownDashboardPath = (pathName: string, activeWorkspaceSlug?: string) =>
         "wizard",
     ]);
 
-    if (firstSegment === "knowledge") return segments.length === 1 || (segments.length === 2 && secondSegment === "new");
+    if (firstSegment === "knowledge") return segments.length === 1 || (segments.length === 2 && Boolean(secondSegment));
     if (exactRoutes.has(firstSegment)) return segments.length === 1;
     if (firstSegment === "books") return segments.length === 2 && Boolean(secondSegment);
     if (firstSegment === "auth") return segments.length === 2 && secondSegment === "redirect";
 
     if (!activeWorkspaceSlug || firstSegment !== activeWorkspaceSlug) return false;
     if (segments.length === 1) return true;
-    if (secondSegment === "knowledge") return segments.length === 2 || (segments.length === 3 && segments[2] === "new");
+    if (secondSegment === "knowledge") return segments.length === 2 || (segments.length === 3 && Boolean(segments[2]));
+    if (secondSegment === "modules") return segments.length === 2 || (segments.length === 3 && Boolean(segments[2]));
+    if (["trainees", "sessions", "reports", "settings", "subscriptions", "wizard"].includes(secondSegment)) {
+        return segments.length === 2;
+    }
 
     return false;
 };
@@ -429,7 +433,7 @@ const WorkspaceMenu = ({
                             >
                                 Workspace settings
                             </MenuItem>
-                            <Link href="/settings" onClick={closeMenu} className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]">
+                            <Link href={`/${workspace.slug}/settings`} onClick={closeMenu} className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]">
                                 <UserPlus className="size-4 shrink-0 text-[var(--text-muted)]" />
                                 <span className="min-w-0 flex-1 truncate whitespace-nowrap">Invite and manage members</span>
                             </Link>
@@ -846,7 +850,19 @@ const SidebarContent = ({
     const resolveNavHref = (href: string) => {
         if (!workspace.slug || workspace.slug === "workspace") return href;
         if (href === "/") return `/${workspace.slug}`;
-        if (href === "/knowledge" || href === "/knowledge/new") return `/${workspace.slug}${href}`;
+        if (
+            href === "/knowledge" ||
+            href === "/knowledge/new" ||
+            href === "/modules" ||
+            href === "/trainees" ||
+            href === "/sessions" ||
+            href === "/reports" ||
+            href === "/settings" ||
+            href === "/subscriptions" ||
+            href === "/wizard"
+        ) {
+            return `/${workspace.slug}${href}`;
+        }
         return href;
     };
 
@@ -929,10 +945,11 @@ const SidebarContent = ({
 
                     <nav className="mt-4 border-t border-[var(--border-subtle)] pt-3 flex flex-col gap-1">
                         {secondaryNavItems.map(({ label, href, icon: Icon }) => {
-                            const active = isActivePath(pathName, href);
+                            const resolvedHref = resolveNavHref(href);
+                            const active = isActivePath(pathName, resolvedHref);
 
                             return (
-                                <Link href={href} onClick={onNavigate} key={label} className={navLinkClass(active)}>
+                                <Link href={resolvedHref} onClick={onNavigate} key={label} className={navLinkClass(active)}>
                                     <Icon className="size-4 shrink-0" />
                                     <span>{label}</span>
                                 </Link>
@@ -960,7 +977,7 @@ const SidebarContent = ({
             <div className="relative z-20 pt-4 before:pointer-events-none before:absolute before:inset-x-[-10px] before:bottom-[-10px] before:top-[-34px] before:-z-10 before:bg-gradient-to-t before:from-[var(--bg-primary)] before:via-[var(--bg-primary)]/92 before:to-transparent">
                 {wizardState && !wizardState.completed && (
                     <Link
-                        href="/wizard"
+                        href={resolveNavHref("/wizard")}
                         onClick={onNavigate}
                         className="mb-3 block rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)]/95 p-3 text-left shadow-[var(--shadow-soft-sm)] backdrop-blur transition hover:bg-[var(--surface-hover)]"
                     >
@@ -1069,7 +1086,7 @@ const Navbar = () => {
         <>
             <aside
                 className={cn(
-                    "fixed inset-y-0 left-0 z-50 hidden h-screen border-r border-[var(--border-subtle)] bg-[var(--bg-primary)] p-2.5 transition-transform duration-200 ease-out lg:block",
+                    "fixed inset-y-0 left-0 z-50 hidden h-screen bg-[var(--bg-primary)] p-2.5 transition-transform duration-200 ease-out lg:block",
                     collapsed ? "pointer-events-none -translate-x-full" : "translate-x-0",
                 )}
                 style={{ width: sidebarWidth }}
@@ -1184,4 +1201,3 @@ const Navbar = () => {
 };
 
 export default Navbar;
-

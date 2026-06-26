@@ -10,7 +10,12 @@ import Team from "@/database/models/team.model";
 import UserProfile from "@/database/models/user-profile.model";
 import Workspace from "@/database/models/workspace.model";
 import WorkspaceMember from "@/database/models/workspace-member.model";
-import { ACCEPTED_KNOWLEDGE_SOURCE_TYPES, MAX_KNOWLEDGE_SOURCE_SIZE } from "@/lib/constants";
+import {
+    ACCEPTED_KNOWLEDGE_SOURCE_EXTENSIONS,
+    ACCEPTED_KNOWLEDGE_SOURCE_TYPES,
+    MAX_KNOWLEDGE_SOURCE_SIZE,
+} from "@/lib/constants";
+import { upsertKnowledgeChunks } from "@/lib/ai/pinecone";
 import { parseKnowledgeFile } from "@/lib/knowledge/parse";
 import { serializeData } from "@/lib/utils";
 import type {
@@ -50,6 +55,24 @@ export type KnowledgeSourceSummary = {
     archivedAt?: string;
     createdAt?: string;
     updatedAt?: string;
+};
+
+export type KnowledgeChunkPreview = {
+    _id: string;
+    content: string;
+    chunkIndex: number;
+    pageNumber?: number;
+    sectionTitle?: string;
+    wordCount: number;
+    embeddingStatus: string;
+};
+
+export type KnowledgeSourceDetail = KnowledgeSourceSummary & {
+    chunks: KnowledgeChunkPreview[];
+    chunkCount: number;
+    totalChunkWords: number;
+    pageCount: number;
+    teamNames: string[];
 };
 
 export type CreateKnowledgeSourceInput = {
@@ -130,6 +153,13 @@ type SourceLike = Pick<
 };
 
 const editableRoles = new Set(["owner", "admin", "trainer"]);
+
+const hasAcceptedKnowledgeSourceType = (file: File) => {
+    if (ACCEPTED_KNOWLEDGE_SOURCE_TYPES.includes(file.type)) return true;
+
+    const fileName = file.name.toLowerCase();
+    return ACCEPTED_KNOWLEDGE_SOURCE_EXTENSIONS.some((extension) => fileName.endsWith(extension));
+};
 
 const getActiveWorkspaceAccess = async (): Promise<ActiveWorkspaceAccess> => {
     const { userId } = await auth();
@@ -235,6 +265,24 @@ const serializeSource = (source: SourceLike): KnowledgeSourceSummary => ({
     archivedAt: source.archivedAt?.toISOString(),
     createdAt: source.createdAt?.toISOString(),
     updatedAt: source.updatedAt?.toISOString(),
+});
+
+const serializeChunkPreview = (chunk: {
+    _id: { toString: () => string };
+    content: string;
+    chunkIndex: number;
+    pageNumber?: number;
+    sectionTitle?: string;
+    wordCount: number;
+    embeddingStatus: string;
+}): KnowledgeChunkPreview => ({
+    _id: chunk._id.toString(),
+    content: chunk.content,
+    chunkIndex: chunk.chunkIndex,
+    pageNumber: chunk.pageNumber,
+    sectionTitle: chunk.sectionTitle,
+    wordCount: chunk.wordCount,
+    embeddingStatus: chunk.embeddingStatus,
 });
 
 export const createKnowledgeSourceMetadata = async (
@@ -378,6 +426,64 @@ export const listKnowledgeSources = async (
     return { success: true, data: serializeData(sources.map(serializeSource)) };
 };
 
+export const getKnowledgeSourceDetail = async (
+    sourceId: string,
+): Promise<ActionResult<KnowledgeSourceDetail>> => {
+    const access = await getActiveWorkspaceAccess();
+
+    if ("error" in access) {
+        return { success: false, error: access.error };
+    }
+
+    if (!Types.ObjectId.isValid(sourceId)) {
+        return { success: false, error: "That source could not be found." };
+    }
+
+    const source = await KnowledgeSource.findOne({
+        _id: sourceId,
+        workspaceId: access.workspace._id,
+    }).lean();
+
+    if (!source) {
+        return { success: false, error: "That source could not be found." };
+    }
+
+    const [chunks, chunkStats, scopedTeams] = await Promise.all([
+        KnowledgeChunk.find({ sourceId: source._id, workspaceId: access.workspace._id })
+            .sort({ chunkIndex: 1 })
+            .limit(8)
+            .lean(),
+        KnowledgeChunk.aggregate([
+            { $match: { sourceId: source._id, workspaceId: access.workspace._id } },
+            {
+                $group: {
+                    _id: null,
+                    chunkCount: { $sum: 1 },
+                    totalChunkWords: { $sum: "$wordCount" },
+                    pages: { $addToSet: "$pageNumber" },
+                },
+            },
+        ]),
+        Team.find({ _id: { $in: source.teamIds }, workspaceId: access.workspace._id }).sort({ name: 1 }).lean(),
+    ]);
+
+    const stats = chunkStats[0] as
+        | { chunkCount?: number; totalChunkWords?: number; pages?: Array<number | null | undefined> }
+        | undefined;
+
+    return {
+        success: true,
+        data: serializeData({
+            ...serializeSource(source),
+            chunks: chunks.map(serializeChunkPreview),
+            chunkCount: stats?.chunkCount || 0,
+            totalChunkWords: stats?.totalChunkWords || 0,
+            pageCount: (stats?.pages || []).filter((page) => typeof page === "number").length,
+            teamNames: scopedTeams.map((team) => team.name),
+        }),
+    };
+};
+
 export const updateKnowledgeSourceStatus = async (input: {
     sourceId: string;
     status: KnowledgeSourceStatus;
@@ -416,6 +522,7 @@ export const updateKnowledgeSourceStatus = async (input: {
 
     revalidatePath("/knowledge");
     revalidatePath(`/${access.workspace.slug}`);
+    revalidatePath(`/${access.workspace.slug}/knowledge/${input.sourceId}`);
 
     return { success: true, data: serializeData(serializeSource(source)) };
 };
@@ -467,6 +574,46 @@ export const updateKnowledgeSourceScope = async (input: {
     return { success: true, data: serializeData(serializeSource(source)) };
 };
 
+export const updateKnowledgeSourceType = async (input: {
+    sourceId: string;
+    sourceType: KnowledgeSourceType;
+}): Promise<ActionResult<KnowledgeSourceSummary>> => {
+    const access = await getActiveWorkspaceAccess();
+
+    if ("error" in access) {
+        return { success: false, error: access.error };
+    }
+
+    const permissionError = ensureEditor(access.membership);
+
+    if (permissionError) {
+        return { success: false, error: permissionError };
+    }
+
+    if (!Types.ObjectId.isValid(input.sourceId)) {
+        return { success: false, error: "That source could not be found." };
+    }
+
+    const source = await KnowledgeSource.findOneAndUpdate(
+        { _id: input.sourceId, workspaceId: access.workspace._id },
+        {
+            sourceType: input.sourceType,
+            updatedByClerkId: access.userId,
+        },
+        { new: true },
+    );
+
+    if (!source) {
+        return { success: false, error: "That source could not be found." };
+    }
+
+    revalidatePath("/knowledge");
+    revalidatePath(`/${access.workspace.slug}`);
+    revalidatePath(`/${access.workspace.slug}/knowledge/${input.sourceId}`);
+
+    return { success: true, data: serializeData(serializeSource(source)) };
+};
+
 export const archiveKnowledgeSource = async (
     sourceId: string,
 ): Promise<ActionResult<KnowledgeSourceSummary>> => {
@@ -476,7 +623,7 @@ export const archiveKnowledgeSource = async (
 export const processUploadedKnowledgeSource = async (
     input: UploadKnowledgeSourceInput,
 ): Promise<ActionResult<KnowledgeSourceSummary>> => {
-    if (!ACCEPTED_KNOWLEDGE_SOURCE_TYPES.includes(input.file.type)) {
+    if (!hasAcceptedKnowledgeSourceType(input.file)) {
         return { success: false, error: "Upload a PDF, TXT, or Markdown source file." };
     }
 
@@ -514,7 +661,7 @@ export const processUploadedKnowledgeSource = async (
         }
 
         await KnowledgeChunk.deleteMany({ sourceId: sourceResult.data._id });
-        await KnowledgeChunk.insertMany(
+        const createdChunks = await KnowledgeChunk.insertMany(
             parsed.chunks.map((chunk) => ({
                 workspaceId: access.workspace._id,
                 sourceId: sourceResult.data._id,
@@ -534,6 +681,16 @@ export const processUploadedKnowledgeSource = async (
                 },
             })),
         );
+
+        await upsertKnowledgeChunks({
+            chunks: createdChunks,
+            source: {
+                _id: sourceResult.data._id,
+                title: sourceResult.data.title,
+                sourceType: sourceResult.data.sourceType,
+                version: sourceResult.data.version,
+            },
+        });
 
         const readyResult = await updateKnowledgeSourceStatus({ sourceId: sourceResult.data._id, status: "ready" });
         return readyResult;
