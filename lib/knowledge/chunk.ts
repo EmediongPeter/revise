@@ -23,16 +23,20 @@ const normalizeText = (value: string) =>
 
 const getWordCount = (value: string) => value.split(/\s+/).filter(Boolean).length;
 
-const tokenTargetToWordTarget = (tokens: number) => Math.max(120, Math.floor(tokens * 0.75));
-const tokenOverlapToWordOverlap = (tokens: number) => Math.max(20, Math.floor(tokens * 0.75));
+const tokenTargetToWordTarget = (tokens: number) =>
+    Number.isFinite(tokens) && tokens > 0 ? Math.max(120, Math.floor(tokens * 0.75)) : 375;
+const tokenOverlapToWordOverlap = (tokens: number) =>
+    Number.isFinite(tokens) && tokens >= 0 ? Math.max(20, Math.floor(tokens * 0.75)) : 60;
 
 export const splitKnowledgeText = (
     blocks: TextBlock[],
     chunkSize = tokenTargetToWordTarget(AI_CHUNK_TARGET_TOKENS),
     overlapSize = tokenOverlapToWordOverlap(AI_CHUNK_OVERLAP_TOKENS),
 ): ParsedKnowledgeChunk[] => {
-    if (chunkSize <= 0) throw new Error("chunkSize must be greater than 0");
-    if (overlapSize < 0 || overlapSize >= chunkSize) {
+    if (!Number.isFinite(chunkSize) || chunkSize <= 0) {
+        throw new Error("chunkSize must be a finite number greater than 0");
+    }
+    if (!Number.isFinite(overlapSize) || overlapSize < 0 || overlapSize >= chunkSize) {
         throw new Error("overlapSize must be >= 0 and less than chunkSize");
     }
 

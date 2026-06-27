@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { CalendarDays, Check, MailPlus, Send, Users, X } from "lucide-react";
+import { CalendarDays, Check, Clock3, Copy, MailPlus, Send, Users, X } from "lucide-react";
+import { assignTrainingModule, type AssignmentLinkSummary } from "@/lib/actions/practice.actions";
 import type { TrainingPlanMemberSummary, TrainingPlanTeamSummary } from "@/lib/actions/training.actions";
 
 const initials = (value: string) =>
@@ -16,36 +17,39 @@ const initials = (value: string) =>
         .toUpperCase() || "U";
 
 const AssignTrainingPlanModal = ({
+    planId,
+    workspaceSlug,
     teams,
     members,
     disabled = false,
     compact = false,
 }: {
+    planId: string;
+    workspaceSlug: string;
     teams: TrainingPlanTeamSummary[];
     members: TrainingPlanMemberSummary[];
     disabled?: boolean;
     compact?: boolean;
 }) => {
     const [open, setOpen] = useState(false);
+    const [inviteOpen, setInviteOpen] = useState(false);
     const [selectedTeamIds, setSelectedTeamIds] = useState(teams.map((team) => team._id));
     const [assignmentMode, setAssignmentMode] = useState<"team" | "selected" | "future">("team");
     const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
     const [dueDate, setDueDate] = useState("");
     const [required, setRequired] = useState(true);
     const [guidance, setGuidance] = useState("");
+    const [sessionDurationMinutes, setSessionDurationMinutes] = useState(15);
     const [inviteEmails, setInviteEmails] = useState("");
     const [inviteTeamId, setInviteTeamId] = useState(teams[0]?._id || "");
-    const [mounted, setMounted] = useState(false);
+    const [isAssigning, setIsAssigning] = useState(false);
+    const [links, setLinks] = useState<AssignmentLinkSummary[]>([]);
 
     const selectedTeamNames = useMemo(
         () => teams.filter((team) => selectedTeamIds.includes(team._id)).map((team) => team.name),
         [selectedTeamIds, teams],
     );
     const externalWarning = assignmentMode === "selected" && selectedTeamIds.length > 0 && selectedMemberIds.length > 0;
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
 
     const toggleTeam = (teamId: string) => {
         setSelectedTeamIds((current) =>
@@ -59,14 +63,78 @@ const AssignTrainingPlanModal = ({
         );
     };
 
-    const close = () => setOpen(false);
-
-    const stageAssignment = () => {
-        toast.info("Assignment execution is staged for the next phase. This blueprint is ready for assignment design.");
+    const close = () => {
         setOpen(false);
+        setInviteOpen(false);
     };
 
-    const inviteModal = open && assignmentMode === "future" && mounted
+    const copyLink = async (link: string) => {
+        await navigator.clipboard.writeText(link);
+        toast.success("Invite link copied.");
+    };
+
+    const stageAssignment = async () => {
+        setIsAssigning(true);
+
+        try {
+            const result = await assignTrainingModule({
+                planId,
+                mode: assignmentMode,
+                teamIds: selectedTeamIds,
+                memberIds: selectedMemberIds,
+                inviteEmails,
+                inviteTeamId,
+                dueDate,
+                required,
+                guidanceOverride: guidance,
+                sessionDurationMinutes,
+            });
+
+            if (!result.success) {
+                toast.error(result.error);
+                return;
+            }
+
+            setLinks(result.data.links);
+            toast.success("Assignment ready. Copy invite links for trainees.");
+        } finally {
+            setIsAssigning(false);
+        }
+    };
+
+    const inviteLinksPanel = links.length > 0 && (
+        <div className="mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Invite links</p>
+            <div className="mt-2 max-h-44 space-y-2 overflow-y-auto [scrollbar-width:thin] [scrollbar-color:var(--border-medium)_transparent]">
+                {links.map((link) => (
+                    <div key={link.assignmentId} className="flex items-center gap-2 rounded-lg bg-[var(--surface-elevated)] px-2.5 py-2">
+                        <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-semibold text-[var(--text-primary)]">
+                                {link.memberName || link.email || "Assigned trainee"}
+                            </span>
+                            <span className="block truncate text-[11px] text-[var(--text-muted)]">{link.inviteUrl}</span>
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => copyLink(link.inviteUrl)}
+                            className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-[var(--border-subtle)] text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+                        >
+                            <Copy className="size-3.5" />
+                        </button>
+                    </div>
+                ))}
+            </div>
+            <a
+                href={`/${workspaceSlug}/sessions`}
+                className="mt-3 inline-flex h-8 items-center rounded-full border border-[var(--border-subtle)] px-3 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)]"
+            >
+                View practice sessions
+            </a>
+        </div>
+    );
+
+    const canUsePortal = typeof document !== "undefined";
+    const inviteModal = compact && inviteOpen && canUsePortal
         ? createPortal(
             <div className="fixed inset-0 z-[520] flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm">
                 <div className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
@@ -122,11 +190,13 @@ const AssignTrainingPlanModal = ({
                         <button
                             type="button"
                             onClick={stageAssignment}
-                            className="inline-flex h-9 cursor-pointer items-center rounded-full bg-[#d97757] px-4 text-sm font-semibold text-white"
+                            disabled={isAssigning}
+                            className="inline-flex h-9 cursor-pointer items-center rounded-full bg-[#d97757] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            Invite and assign
+                            {isAssigning ? "Assigning..." : "Invite and assign"}
                         </button>
                     </div>
+                    {inviteLinksPanel}
                 </div>
             </div>,
             document.body,
@@ -174,7 +244,7 @@ const AssignTrainingPlanModal = ({
                         type="button"
                         onClick={() => {
                             setAssignmentMode("future");
-                            setOpen(true);
+                            setInviteOpen(true);
                         }}
                         className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left transition hover:bg-[var(--surface-hover)]"
                     >
@@ -187,7 +257,7 @@ const AssignTrainingPlanModal = ({
         );
     }
 
-    const fullModal = open && mounted
+    const fullModal = open && canUsePortal
         ? createPortal(
             <div className="fixed inset-0 z-[520] flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm">
                 <div className="flex max-h-[82vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
@@ -298,6 +368,33 @@ const AssignTrainingPlanModal = ({
                                 </div>
                             )}
 
+                            {assignmentMode === "future" && (
+                                <div className="mt-3 grid gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-4 sm:grid-cols-2">
+                                    <label className="block text-sm font-semibold text-[var(--text-primary)]">
+                                        Email invitations
+                                        <textarea
+                                            value={inviteEmails}
+                                            onChange={(event) => setInviteEmails(event.target.value)}
+                                            placeholder="email@company.com, teammate@company.com"
+                                            className="mt-2 min-h-20 w-full resize-none rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-2 text-sm leading-6 outline-none"
+                                        />
+                                    </label>
+                                    <label className="block text-sm font-semibold text-[var(--text-primary)]">
+                                        Add to team
+                                        <select
+                                            value={inviteTeamId}
+                                            onChange={(event) => setInviteTeamId(event.target.value)}
+                                            className="mt-2 h-10 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 text-sm outline-none"
+                                        >
+                                            <option value="">Do not add to a team yet</option>
+                                            {teams.map((team) => (
+                                                <option key={team._id} value={team._id}>{team.name}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                </div>
+                            )}
+
                             {externalWarning && (
                                 <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
                                     Selected people are not validated against team membership yet. Next phase should let admins assign externally or add them to {selectedTeamNames.join(", ")} first.
@@ -305,7 +402,7 @@ const AssignTrainingPlanModal = ({
                             )}
                         </section>
 
-                        <section className="grid gap-3 sm:grid-cols-2">
+                        <section className="grid gap-3 sm:grid-cols-3">
                             <label className="text-sm font-semibold text-[var(--text-primary)]">
                                 Due date
                                 <span className="mt-2 flex h-11 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3">
@@ -330,6 +427,21 @@ const AssignTrainingPlanModal = ({
                                         <span className={`block size-4 rounded-full bg-white transition ${required ? "translate-x-4" : ""}`} />
                                     </span>
                                 </button>
+                            </label>
+                            <label className="text-sm font-semibold text-[var(--text-primary)]">
+                                Session length
+                                <span className="mt-2 flex h-11 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3">
+                                    <Clock3 className="size-4 text-[var(--text-muted)]" />
+                                    <select
+                                        value={sessionDurationMinutes}
+                                        onChange={(event) => setSessionDurationMinutes(Number(event.target.value))}
+                                        className="w-full bg-transparent text-sm text-[var(--text-primary)] outline-none"
+                                    >
+                                        {[10, 15, 20, 30, 45, 60].map((minutes) => (
+                                            <option key={minutes} value={minutes}>{minutes} minutes</option>
+                                        ))}
+                                    </select>
+                                </span>
                             </label>
                         </section>
 
@@ -359,12 +471,16 @@ const AssignTrainingPlanModal = ({
                             <button
                                 type="button"
                                 onClick={stageAssignment}
-                                className="inline-flex h-9 cursor-pointer items-center rounded-full bg-[#d97757] px-4 text-sm font-semibold text-white transition hover:bg-[#c96849]"
+                                disabled={isAssigning}
+                                className="inline-flex h-9 cursor-pointer items-center rounded-full bg-[#d97757] px-4 text-sm font-semibold text-white transition hover:bg-[#c96849] disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                Stage assignment
+                                {isAssigning ? "Assigning..." : "Create assignment"}
                             </button>
                         </div>
                     </footer>
+                    <div className="border-t border-[var(--border-subtle)] px-6 pb-5">
+                        {inviteLinksPanel}
+                    </div>
                 </div>
             </div>,
             document.body,

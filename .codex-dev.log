@@ -1,0 +1,13 @@
+
+> bookified@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.43.88:3000
+- Environments: .env
+
+✓ Starting...
+✓ Ready in 9.4s
+○ Compiling /sign-in ...
+ GET /sign-in 200 in 26.5s (compile: 14.0s, proxy.ts: 74ms, render: 12.5s)

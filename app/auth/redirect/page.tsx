@@ -23,14 +23,14 @@ const AuthRedirectPage = async ({
         redirect("/sign-in");
     }
 
-    if (!onboardingStatus.completed) {
-        redirect("/onboarding");
-    }
-
     const requestedRedirect = redirect_url || redirectUrl;
 
     if (isSafeInternalRedirect(requestedRedirect)) {
         redirect(requestedRedirect);
+    }
+
+    if (!onboardingStatus.completed) {
+        redirect("/onboarding");
     }
 
     if (!onboardingStatus.workspaceSlug) {

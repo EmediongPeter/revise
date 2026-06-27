@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSignUp } from "@clerk/nextjs";
 import { ArrowRight, KeyRound, Loader2, Mail, Sparkles } from "lucide-react";
 import { FaGoogle } from "react-icons/fa";
@@ -22,9 +22,16 @@ const submitButtonClass =
     "h-[48px] w-full rounded-full bg-[var(--text-primary)] text-[15px] font-semibold text-[var(--text-inverse)] shadow-none hover:bg-[var(--accent-warm-hover)]";
 const backButtonClass =
     "cursor-pointer text-[15px] font-semibold text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text-primary)]";
+const InlineAuthError = ({ message }: { message: string | null }) =>
+    message ? (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm leading-5 text-red-700">
+            {message}
+        </p>
+    ) : null;
 
 const SignUpForm = () => {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { isLoaded, signUp, setActive } = useSignUp();
     const [step, setStep] = useState<AuthStep>("choices");
     const [emailAddress, setEmailAddress] = useState("");
@@ -34,12 +41,24 @@ const SignUpForm = () => {
     const [pendingVerification, setPendingVerification] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isOAuthSubmitting, setIsOAuthSubmitting] = useState<string | null>(null);
+    const redirectError = searchParams.get("error_description") || searchParams.get("error");
+    const [authError, setAuthError] = useState<string | null>(
+        redirectError ? "Authentication could not be completed. Please try again." : null,
+    );
 
     const showAuthError = (message: string) => {
+        setAuthError(message);
         toast.error(message, { duration: 5000 });
     };
+    const requestedRedirectUrl = searchParams.get("redirect_url") || searchParams.get("redirectUrl");
+    const redirectUrl = requestedRedirectUrl
+        ? `/auth/redirect?redirect_url=${encodeURIComponent(requestedRedirectUrl)}`
+        : "/onboarding";
 
     const resetToChoices = () => {
+        setAuthError(null);
+        setPendingVerification(false);
+        setCode("");
         setStep("choices");
     };
 
@@ -50,12 +69,13 @@ const SignUpForm = () => {
         }
 
         await setActive({ session: sessionId });
-        router.push("/onboarding");
+        router.push(redirectUrl);
         router.refresh();
     };
 
     const handleEmailContinue = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+        setAuthError(null);
         setStep("password");
     };
 
@@ -63,6 +83,7 @@ const SignUpForm = () => {
         event.preventDefault();
         if (!isLoaded || !signUp) return;
 
+        setAuthError(null);
         setIsSubmitting(true);
 
         try {
@@ -89,6 +110,7 @@ const SignUpForm = () => {
         event.preventDefault();
         if (!isLoaded || !signUp) return;
 
+        setAuthError(null);
         setIsSubmitting(true);
 
         try {
@@ -110,13 +132,14 @@ const SignUpForm = () => {
     const handleOAuth = async (strategy: EnabledOAuthStrategy) => {
         if (!isLoaded || !signUp) return;
 
+        setAuthError(null);
         setIsOAuthSubmitting(strategy);
 
         try {
             await signUp.authenticateWithRedirect({
                 strategy,
                 redirectUrl: "/sso-callback",
-                redirectUrlComplete: "/onboarding",
+                redirectUrlComplete: redirectUrl,
             });
         } catch (authError) {
             setIsOAuthSubmitting(null);
@@ -128,6 +151,7 @@ const SignUpForm = () => {
         event.preventDefault();
         if (!isLoaded || !signUp) return;
 
+        setAuthError(null);
         setIsSubmitting(true);
 
         try {
@@ -151,7 +175,10 @@ const SignUpForm = () => {
                 <form onSubmit={handleVerification} className="w-full space-y-4">
                     <Input
                         value={code}
-                        onChange={(event) => setCode(event.target.value)}
+                        onChange={(event) => {
+                            setCode(event.target.value);
+                            setAuthError(null);
+                        }}
                         inputMode="numeric"
                         autoComplete="one-time-code"
                         required
@@ -159,6 +186,7 @@ const SignUpForm = () => {
                         placeholder="123456"
                         className="h-[48px] w-full rounded-xl border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 text-center text-[17px] font-semibold tracking-[0.3em] text-[var(--text-primary)] shadow-none placeholder:text-[var(--text-muted)] focus-visible:ring-2 focus-visible:ring-[#d97757]/35"
                     />
+                    <InlineAuthError message={authError} />
                     <Button type="submit" className={submitButtonClass} disabled={!isLoaded || isSubmitting}>
                         {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : "Verify and continue"}
                         {!isSubmitting && <ArrowRight className="size-4" />}
@@ -200,7 +228,10 @@ const SignUpForm = () => {
                 <Input
                     type="password"
                     value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    onChange={(event) => {
+                        setPassword(event.target.value);
+                        setAuthError(null);
+                    }}
                     autoComplete="new-password"
                     required
                     minLength={8}
@@ -208,6 +239,7 @@ const SignUpForm = () => {
                     placeholder="At least 8 characters..."
                     className={authInputClass}
                 />
+                <InlineAuthError message={authError} />
                 <div id="clerk-captcha" data-cl-theme="auto" data-cl-size="flexible" />
                 <Button type="submit" className={submitButtonClass} disabled={!isLoaded || isSubmitting}>
                     {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : "Create account"}
@@ -227,13 +259,17 @@ const SignUpForm = () => {
                 <Input
                     type="email"
                     value={samlIdentifier}
-                    onChange={(event) => setSamlIdentifier(event.target.value)}
+                    onChange={(event) => {
+                        setSamlIdentifier(event.target.value);
+                        setAuthError(null);
+                    }}
                     autoComplete="email"
                     required
                     autoFocus
                     placeholder="name@company.com"
                     className={authInputClass}
                 />
+                <InlineAuthError message={authError} />
                 <Button type="submit" className={secondaryButtonClass} disabled={!isLoaded || isSubmitting}>
                     {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : "Continue with SAML SSO"}
                 </Button>
@@ -261,6 +297,7 @@ const SignUpForm = () => {
                 {isOAuthSubmitting === GOOGLE_OAUTH_STRATEGY ? <Loader2 className="size-4 animate-spin" /> : <FaGoogle className="size-4" />}
                 Continue with Google
             </Button>
+            <InlineAuthError message={authError} />
             <Button type="button" className={secondaryButtonClass} onClick={() => setStep("email")}>
                 <Mail className="size-4" />
                 Continue with email

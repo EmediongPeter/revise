@@ -1,8 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { BookOpenCheck, ClipboardCheck } from "lucide-react";
+import { BookOpenCheck } from "lucide-react";
 import CreateBlueprintModal from "@/components/training/CreateBlueprintModal";
 import TrainingBlueprintActions from "@/components/training/TrainingBlueprintActions";
+import { TrainingBlueprintIcon } from "@/components/training/TrainingBlueprintIcon";
 import { listKnowledgeSources } from "@/lib/actions/knowledge.actions";
 import { listTrainingPlans } from "@/lib/actions/training.actions";
 import { getWorkspaceTeamData } from "@/lib/actions/workspace.actions";
@@ -99,8 +100,11 @@ const TrainingBlueprintLibrary = async ({ workspaceSlug }: { workspaceSlug: stri
                                     className="grid grid-cols-[minmax(360px,1fr)_150px_130px_110px_130px_170px] items-center gap-0 px-4 py-4 transition hover:bg-[var(--surface-hover)]"
                                 >
                                     <Link href={`/${workspaceSlug}/modules/${plan._id}`} className="flex min-w-0 items-start gap-3">
-                                        <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-secondary)] text-[var(--text-muted)]">
-                                            <ClipboardCheck className="size-4" />
+                                        <span
+                                            className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-secondary)]"
+                                            style={{ color: plan.iconColor || "#d97757" }}
+                                        >
+                                            <TrainingBlueprintIcon iconKey={plan.iconKey} iconColor={plan.iconColor} className="size-4" />
                                         </span>
                                         <span className="min-w-0">
                                             <span className="block max-w-[42rem] whitespace-normal break-words text-sm font-semibold leading-5 text-[var(--text-primary)]">

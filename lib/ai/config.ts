@@ -4,6 +4,7 @@ export const AI_BLUEPRINT_PROVIDER = process.env.AI_BLUEPRINT_PROVIDER || "gemin
 export const AI_BLUEPRINT_FALLBACK_PROVIDER = process.env.AI_BLUEPRINT_FALLBACK_PROVIDER || "openrouter";
 export const AI_BLUEPRINT_MODEL = process.env.AI_BLUEPRINT_MODEL || "gemini-2.5-flash";
 export const GEMINI_BLUEPRINT_MODEL = process.env.GEMINI_BLUEPRINT_MODEL || AI_BLUEPRINT_MODEL;
+export const GEMINI_PRACTICE_MODEL = process.env.GEMINI_PRACTICE_MODEL || "gemini-2.5-flash";
 export const OPENROUTER_BLUEPRINT_MODEL =
     process.env.OPENROUTER_BLUEPRINT_MODEL ||
     process.env.AI_BLUEPRINT_FALLBACK_MODEL ||
@@ -13,8 +14,8 @@ export const AI_VOICE_MODEL = process.env.AI_VOICE_MODEL || "llama-3.3-70b-versa
 export const AI_EMBEDDING_PROVIDER = process.env.AI_EMBEDDING_PROVIDER || "pinecone";
 export const PINECONE_EMBEDDING_MODEL = process.env.PINECONE_EMBEDDING_MODEL || "llama-text-embed-v2";
 export const PINECONE_NAMESPACE_PREFIX = process.env.PINECONE_NAMESPACE_PREFIX || "revise";
-export const AI_BLUEPRINT_SYNC_CHUNK_LIMIT = Number(process.env.AI_BLUEPRINT_SYNC_CHUNK_LIMIT || 80);
 export const AI_BLUEPRINT_CONTEXT_LIMIT = Number(process.env.AI_BLUEPRINT_CONTEXT_LIMIT || 28);
+export const AI_BLUEPRINT_RETRIEVAL_MODE = process.env.AI_BLUEPRINT_RETRIEVAL_MODE || "legacy";
 export const AI_BLUEPRINT_MAX_OUTPUT_TOKENS = Number(process.env.AI_BLUEPRINT_MAX_OUTPUT_TOKENS || 4096);
 export const AI_CHUNK_TARGET_TOKENS = Number(process.env.AI_CHUNK_TARGET_TOKENS || 500);
 export const AI_CHUNK_OVERLAP_TOKENS = Number(process.env.AI_CHUNK_OVERLAP_TOKENS || 80);
@@ -44,6 +45,15 @@ export const requireGeminiConfig = () => {
         apiKey: process.env.GEMINI_API_KEY,
         baseUrl: GEMINI_BASE_URL,
         model: GEMINI_BLUEPRINT_MODEL,
+    };
+};
+
+export const requireGeminiPracticeConfig = () => {
+    const config = requireGeminiConfig();
+
+    return {
+        ...config,
+        model: GEMINI_PRACTICE_MODEL,
     };
 };
 

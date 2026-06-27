@@ -82,7 +82,7 @@ export interface IWorkspace extends Document {
     updatedAt: Date;
 }
 
-export type WorkspaceMemberRole = "owner" | "admin" | "trainer" | "member";
+export type WorkspaceMemberRole = "owner" | "admin" | "trainer" | "trainee" | "member";
 export type WorkspaceMemberStatus = "active" | "invited" | "removed";
 
 export interface IWorkspaceMember extends Document {
@@ -93,6 +93,7 @@ export interface IWorkspaceMember extends Document {
     displayName?: string;
     role: WorkspaceMemberRole;
     status: WorkspaceMemberStatus;
+    teamIds: Types.ObjectId[];
     invitedByClerkId?: string;
     createdAt: Date;
     updatedAt: Date;
@@ -136,6 +137,18 @@ export type TrainingPlanGoal =
     | "operations"
     | "custom";
 export type PracticeScenarioStatus = "draft" | "ready" | "archived";
+export type ModuleAssignmentStatus = "invited" | "assigned" | "in_progress" | "completed" | "cancelled";
+export type PracticeSessionStatus = "active" | "completed" | "needs_review" | "cancelled";
+export type PracticeSessionStage = "opening" | "scenario" | "probe" | "coach" | "complete";
+export type PracticeInstructionalAction =
+    | "opening"
+    | "probe"
+    | "challenge"
+    | "coach"
+    | "remediate"
+    | "advance"
+    | "complete";
+export type PracticeCompletionReason = "scenarios_complete" | "time_expired" | "trainee_ended";
 
 export interface IKnowledgeSource extends Document {
     _id: Types.ObjectId;
@@ -192,6 +205,8 @@ export interface ITrainingPlan extends Document {
     sourceIds: Types.ObjectId[];
     title: string;
     description?: string;
+    iconKey?: string;
+    iconColor?: string;
     objective?: string;
     keyTopics: string[];
     requiredKnowledge: string[];
@@ -242,7 +257,8 @@ export interface ITrainingModule extends Document {
 export interface IPracticeScenario extends Document {
     _id: Types.ObjectId;
     workspaceId: Types.ObjectId;
-    moduleId: Types.ObjectId;
+    trainingPlanId: Types.ObjectId;
+    moduleId?: Types.ObjectId;
     teamIds: Types.ObjectId[];
     sourceIds: Types.ObjectId[];
     title: string;
@@ -255,6 +271,95 @@ export interface IPracticeScenario extends Document {
     createdByClerkId: string;
     updatedByClerkId?: string;
     archivedAt?: Date;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface IModuleAssignment extends Document {
+    _id: Types.ObjectId;
+    workspaceId: Types.ObjectId;
+    trainingPlanId: Types.ObjectId;
+    assignedToMemberId?: Types.ObjectId;
+    assignedToTeamId?: Types.ObjectId;
+    inviteEmail?: string;
+    inviteToken: string;
+    status: ModuleAssignmentStatus;
+    required: boolean;
+    dueDate?: Date;
+    guidanceOverride?: string;
+    sessionDurationMinutes: number;
+    progressPercent: number;
+    completedScenarioCount: number;
+    totalScenarioCount: number;
+    acceptedAt?: Date;
+    completedAt?: Date;
+    createdByClerkId: string;
+    updatedByClerkId?: string;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export type PracticeSessionMessageRole = "assistant" | "user" | "system";
+
+export interface IPracticeSessionMessage {
+    role: PracticeSessionMessageRole;
+    content: string;
+    createdAt: Date;
+    scenarioIndex?: number;
+    action?: PracticeInstructionalAction;
+}
+
+export interface IPracticeCriterionAssessment {
+    criterion: string;
+    score: number;
+    met: boolean;
+    evidence?: string;
+}
+
+export interface IPracticeEvidenceReference {
+    sourceId: string;
+    sourceTitle: string;
+    chunkId: string;
+    chunkIndex: number;
+    pageNumber?: number;
+}
+
+export interface IPracticeSessionScenarioCheckpoint {
+    scenarioId: Types.ObjectId;
+    title: string;
+    status: "pending" | "active" | "completed";
+    score?: number;
+    notes?: string;
+    turnCount: number;
+    hintCount: number;
+    criterionAssessments: IPracticeCriterionAssessment[];
+    misconceptions: string[];
+    strengths: string[];
+    gaps: string[];
+    evidenceRefs: IPracticeEvidenceReference[];
+    lastAction?: PracticeInstructionalAction;
+}
+
+export interface IPracticeSession extends Document {
+    _id: Types.ObjectId;
+    workspaceId: Types.ObjectId;
+    assignmentId: Types.ObjectId;
+    trainingPlanId: Types.ObjectId;
+    traineeMemberId: Types.ObjectId;
+    status: PracticeSessionStatus;
+    stage: PracticeSessionStage;
+    currentScenarioIndex: number;
+    scenarioCheckpoints: IPracticeSessionScenarioCheckpoint[];
+    messages: IPracticeSessionMessage[];
+    score?: number;
+    strengths: string[];
+    gaps: string[];
+    managerNotes?: string;
+    startedAt: Date;
+    expiresAt: Date;
+    durationSeconds?: number;
+    completedAt?: Date;
+    completionReason?: PracticeCompletionReason;
     createdAt: Date;
     updatedAt: Date;
 }

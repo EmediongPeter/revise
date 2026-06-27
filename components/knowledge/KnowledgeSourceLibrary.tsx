@@ -113,7 +113,7 @@ const KnowledgeSourceLibrary = async ({
 
         return true;
     });
-    const statusOptions: Array<KnowledgeSourceStatus | "all"> = ["all", "ready", "processing", "failed", "archived"];
+    const statusOptions: Array<KnowledgeSourceStatus | "all"> = ["all", "uploaded", "ready", "processing", "failed", "archived"];
 
     return (
         <main className="wrapper container">
@@ -208,7 +208,7 @@ const KnowledgeSourceLibrary = async ({
                                     {shortcut}
                                 </NewSourceTrigger>
                                 <Link
-                                    href="/wizard"
+                                    href={`/${workspaceSlug}/wizard`}
                                     className="inline-flex h-9 items-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                                 >
                                     View guide

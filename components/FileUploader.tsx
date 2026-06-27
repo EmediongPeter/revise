@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useController, FieldValues } from "react-hook-form";
 import { FileText, Loader2, Plus, X } from "lucide-react";
 import { FileUploadFieldProps } from "@/types";
@@ -15,24 +15,24 @@ const renderPdfFirstPage = async (file: File) => {
     ).toString();
 
     const buffer = await file.arrayBuffer();
-    const document = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
-    const page = await document.getPage(1);
-    const viewport = page.getViewport({ scale: 0.6 });
-    const canvas = window.document.createElement("canvas");
-    const context = canvas.getContext("2d");
+    const pdfDocument = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
 
-    if (!context) {
-        await document.destroy();
-        throw new Error("Could not render PDF preview.");
+    try {
+        const page = await pdfDocument.getPage(1);
+        const viewport = page.getViewport({ scale: 0.6 });
+        const canvas = window.document.createElement("canvas");
+        const context = canvas.getContext("2d");
+
+        if (!context) throw new Error("Could not render PDF preview.");
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvas, canvasContext: context, viewport }).promise;
+
+        return canvas.toDataURL("image/png");
+    } finally {
+        await pdfDocument.destroy();
     }
-
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-
-    await page.render({ canvas, canvasContext: context, viewport }).promise;
-    await document.destroy();
-
-    return canvas.toDataURL("image/png");
 };
 
 const SourcePreviewCard = ({
@@ -45,19 +45,13 @@ const SourcePreviewCard = ({
     disabled?: boolean;
 }) => {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [isPreviewLoading, setIsPreviewLoading] = useState(false);
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const [isPreviewLoading, setIsPreviewLoading] = useState(isPdf);
 
     useEffect(() => {
         let cancelled = false;
 
-        if (!isPdf) {
-            setPreviewUrl(null);
-            setIsPreviewLoading(false);
-            return;
-        }
-
-        setIsPreviewLoading(true);
+        if (!isPdf) return;
 
         renderPdfFirstPage(file)
             .then((url) => {
@@ -77,19 +71,19 @@ const SourcePreviewCard = ({
     }, [file, isPdf]);
 
     return (
-        <div className="relative flex w-[168px] shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-white shadow-sm">
+        <div className="relative flex w-[168px] shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-sm">
             <button
                 type="button"
                 onClick={onRemove}
                 disabled={disabled}
-                className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-full bg-white/95 text-red-500 shadow-sm ring-1 ring-red-500/15 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-full bg-[var(--surface-elevated)] text-red-500 shadow-sm ring-1 ring-red-500/15 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
                 <X className="size-4" />
                 <span className="sr-only">Remove {file.name}</span>
             </button>
 
             <div className="flex h-32 w-full items-center justify-center bg-[var(--bg-secondary)]">
-                {isPreviewLoading ? (
+                {isPdf && isPreviewLoading ? (
                     <div className="flex flex-col items-center gap-2 text-[var(--text-muted)]">
                         <Loader2 className="size-6 animate-spin" />
                         <span className="text-xs font-medium">Previewing</span>
@@ -138,6 +132,7 @@ const FileUploader = <T extends FieldValues>({
     } = useController({ name, control });
 
     const inputRef = useRef<HTMLInputElement>(null);
+    const inputId = useId();
     const [isDragging, setIsDragging] = useState(false);
     const files = toFileArray(value, multiple);
     const isUploaded = files.length > 0;
@@ -203,7 +198,7 @@ const FileUploader = <T extends FieldValues>({
 
     return (
         <FormItem className="w-full">
-            <FormLabel className="form-label">{label}</FormLabel>
+            <FormLabel htmlFor={inputId} className="form-label">{label}</FormLabel>
             <FormControl>
                 <div
                     className={cn(
@@ -212,6 +207,14 @@ const FileUploader = <T extends FieldValues>({
                         isDragging && "border-[#d97757] bg-[#d97757]/10",
                     )}
                     onClick={() => !disabled && inputRef.current?.click()}
+                    onKeyDown={(event) => {
+                        if (disabled || (event.key !== "Enter" && event.key !== " ")) return;
+                        event.preventDefault();
+                        inputRef.current?.click();
+                    }}
+                    role="button"
+                    tabIndex={disabled ? -1 : 0}
+                    aria-disabled={disabled}
                     onDragEnter={(event) => {
                         event.preventDefault();
                         if (!disabled) setIsDragging(true);
@@ -227,6 +230,7 @@ const FileUploader = <T extends FieldValues>({
                     onDrop={handleDrop}
                 >
                     <input
+                        id={inputId}
                         type="file"
                         accept={acceptTypes.join(",")}
                         className="hidden"

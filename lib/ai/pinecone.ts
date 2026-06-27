@@ -104,9 +104,9 @@ export const upsertKnowledgeChunks = async ({
             await KnowledgeChunk.updateMany(
                 { _id: { $in: chunkBatch.map((chunk) => chunk._id) } },
                 {
-                    embeddingStatus: "embedded",
-                    embeddingModel: PINECONE_EMBEDDING_MODEL,
                     $set: {
+                        embeddingStatus: "embedded",
+                        embeddingModel: PINECONE_EMBEDDING_MODEL,
                         "metadata.pineconeNamespace": namespace,
                         "metadata.embeddedAt": new Date().toISOString(),
                     },
@@ -123,9 +123,9 @@ export const upsertKnowledgeChunks = async ({
             await KnowledgeChunk.updateMany(
                 { _id: { $in: chunkBatch.map((chunk) => chunk._id) } },
                 {
-                    embeddingStatus: "failed",
-                    embeddingModel: PINECONE_EMBEDDING_MODEL,
                     $set: {
+                        embeddingStatus: "failed",
+                        embeddingModel: PINECONE_EMBEDDING_MODEL,
                         "metadata.embeddingError": message,
                     },
                 },

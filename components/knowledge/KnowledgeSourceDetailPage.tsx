@@ -112,7 +112,7 @@ const KnowledgeSourceDetailPage = async ({
                 actions={
                     <>
                         {source.fileUrl && (
-                            <Link href={source.fileUrl} target="_blank" rel="noreferrer" className="dashboard-secondary-action">
+                            <Link href={`/api/knowledge/${source._id}/download`} className="dashboard-secondary-action">
                                 <Download className="size-4" />
                                 Download
                             </Link>

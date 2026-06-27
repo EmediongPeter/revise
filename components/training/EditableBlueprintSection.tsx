@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Edit3, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
+import { Edit3, Plus, Save, Trash2, X } from "lucide-react";
 import { updateTrainingBlueprint } from "@/lib/actions/training.actions";
 import type { UpdateTrainingBlueprintInput } from "@/lib/actions/training.actions";
 
@@ -56,15 +56,6 @@ const EditableBlueprintSection = ({
             <div className="mb-4 flex items-center justify-between gap-3">
                 <h2 className="text-sm font-semibold text-[var(--text-primary)]">{title}</h2>
                 <div className="flex items-center gap-1.5">
-                    <button
-                        type="button"
-                        disabled
-                        title="AI regeneration will be wired in the next AI pass"
-                        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] px-2.5 text-xs font-semibold text-[var(--text-muted)] opacity-60"
-                    >
-                        <RotateCcw className="size-3.5" />
-                        Regenerate
-                    </button>
                     {editing ? (
                         <>
                             <button
@@ -147,9 +138,9 @@ const EditableBlueprintSection = ({
                 <p className="text-sm text-[var(--text-muted)]">Nothing captured yet.</p>
             ) : (
                 <ul className="space-y-2">
-                    {visibleItems.map((item) => (
+                    {visibleItems.map((item, index) => (
                         <li
-                            key={item}
+                            key={index}
                             className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-2 text-sm leading-6 text-[var(--text-secondary)]"
                         >
                             {item}

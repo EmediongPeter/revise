@@ -1,25 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { RotateCw, WifiOff } from "lucide-react";
 
 const KnowledgeSourceWorkspaceState = () => {
-    const [online, setOnline] = useState(true);
-
-    useEffect(() => {
-        setOnline(navigator.onLine);
-
-        const handleOnline = () => setOnline(true);
-        const handleOffline = () => setOnline(false);
-
-        window.addEventListener("online", handleOnline);
-        window.addEventListener("offline", handleOffline);
-
-        return () => {
-            window.removeEventListener("online", handleOnline);
-            window.removeEventListener("offline", handleOffline);
-        };
-    }, []);
+    const online = useSyncExternalStore(
+        (onStoreChange) => {
+            window.addEventListener("online", onStoreChange);
+            window.addEventListener("offline", onStoreChange);
+            return () => {
+                window.removeEventListener("online", onStoreChange);
+                window.removeEventListener("offline", onStoreChange);
+            };
+        },
+        () => navigator.onLine,
+        () => true,
+    );
 
     if (online) return null;
 

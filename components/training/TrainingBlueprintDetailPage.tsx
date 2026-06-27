@@ -17,7 +17,7 @@ const TrainingBlueprintDetailPage = async ({
 
     const plan = result.data;
 
-    return <TrainingBlueprintDetailClient plan={plan} workspaceSlug={workspaceSlug} />;
+    return <TrainingBlueprintDetailClient key={`${plan._id}-${plan.updatedAt}`} plan={plan} workspaceSlug={workspaceSlug} />;
 };
 
 export default TrainingBlueprintDetailPage;

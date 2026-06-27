@@ -173,7 +173,6 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
         },
     });
     const title = form.watch("title");
-    const description = form.watch("description");
     const sourceType = form.watch("sourceType");
     const scope = form.watch("scope");
     const selectedTeamIds = form.watch("teamIds");
@@ -344,33 +343,46 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
             const uploadedSourceIds: string[] = [];
 
             for (const file of data.files) {
-                const pathname = `knowledge/${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
-                const blob = await upload(pathname, file, {
-                    access: "public",
-                    handleUploadUrl: "/api/knowledge/upload",
-                    contentType: getUploadContentType(file),
-                });
-                const result = await processUploadedKnowledgeSource({
-                    title: getFileTitle(data.title, file, data.files.length),
-                    description: data.description,
-                    sourceType: data.sourceType,
-                    scope: data.scope,
-                    teamIds: data.scope === "teams" ? data.teamIds : [],
-                    file,
-                    fileUrl: blob.url,
-                    fileBlobKey: blob.pathname,
-                });
+                try {
+                    const pathname = `knowledge/${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
+                    const contentType = getUploadContentType(file);
+                    const blob = await upload(pathname, file, {
+                        access: "private",
+                        handleUploadUrl: "/api/knowledge/upload",
+                        contentType,
+                    });
+                    const result = await processUploadedKnowledgeSource({
+                        title: getFileTitle(data.title, file, data.files.length),
+                        description: data.description,
+                        sourceType: data.sourceType,
+                        scope: data.scope,
+                        teamIds: data.scope === "teams" ? data.teamIds : [],
+                        fileName: file.name,
+                        mimeType: contentType,
+                        fileSize: file.size,
+                        fileUrl: blob.url,
+                        fileBlobKey: blob.pathname,
+                    });
 
-                if (!result.success) {
-                    failedUploads.push(`${file.name}: ${result.error}`);
-                } else {
-                    uploadedSourceIds.push(result.data._id);
+                    if (!result.success) {
+                        failedUploads.push(`${file.name}: ${result.error}`);
+                    } else {
+                        uploadedSourceIds.push(result.data._id);
+                    }
+                } catch (error) {
+                    failedUploads.push(
+                        `${file.name}: ${error instanceof Error ? error.message : "Upload failed."}`,
+                    );
                 }
             }
 
             if (failedUploads.length > 0) {
-                toast.error(`${failedUploads.length} source file${failedUploads.length === 1 ? "" : "s"} could not be processed.`);
-                return;
+                toast.warning(
+                    uploadedSourceIds.length > 0
+                        ? `${uploadedSourceIds.length} source${uploadedSourceIds.length === 1 ? "" : "s"} created; ${failedUploads.length} failed.`
+                        : `${failedUploads.length} source file${failedUploads.length === 1 ? "" : "s"} could not be processed.`,
+                );
+                if (uploadedSourceIds.length === 0) return;
             }
 
             const nextHref = uploadedSourceIds.length === 1
@@ -384,7 +396,10 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
 
                 if (!blueprintResult.success) {
                     toast.error(blueprintResult.error);
+                    setOpen(false);
+                    resetModal();
                     router.push(nextHref);
+                    router.refresh();
                     return;
                 }
 

@@ -1,6 +1,7 @@
 'use server';
 
 import { auth } from "@clerk/nextjs/server";
+import { get as getBlob } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
 import mongoose, { Types } from "mongoose";
 import { connectToDatabase } from "@/database/mongoose";
@@ -96,9 +97,18 @@ export type UploadKnowledgeSourceInput = Omit<
     CreateKnowledgeSourceInput,
     "fileName" | "fileUrl" | "fileBlobKey" | "mimeType" | "fileSize" | "origin"
 > & {
-    file: File;
+    fileName: string;
+    mimeType: string;
+    fileSize: number;
     fileUrl: string;
     fileBlobKey: string;
+};
+
+export type KnowledgeSourceDownloadRecord = {
+    fileName: string;
+    fileUrl: string;
+    fileBlobKey: string;
+    isPrivate: boolean;
 };
 
 export type ListKnowledgeSourcesInput = {
@@ -623,38 +633,55 @@ export const archiveKnowledgeSource = async (
 export const processUploadedKnowledgeSource = async (
     input: UploadKnowledgeSourceInput,
 ): Promise<ActionResult<KnowledgeSourceSummary>> => {
-    if (!hasAcceptedKnowledgeSourceType(input.file)) {
+    const fileDescriptor = { name: input.fileName, type: input.mimeType } as File;
+
+    if (!hasAcceptedKnowledgeSourceType(fileDescriptor)) {
         return { success: false, error: "Upload a PDF, TXT, or Markdown source file." };
     }
 
-    if (input.file.size > MAX_KNOWLEDGE_SOURCE_SIZE) {
+    if (input.fileSize > MAX_KNOWLEDGE_SOURCE_SIZE) {
         return { success: false, error: "Knowledge source must be 25MB or smaller." };
     }
+    if (!input.fileBlobKey.startsWith("knowledge/") || !input.fileUrl.includes(".private.blob.")) {
+        return { success: false, error: "The uploaded source location is invalid." };
+    }
+
+    const access = await getActiveWorkspaceAccess();
+    if ("error" in access) return { success: false, error: access.error };
+
+    const blobResult = await getBlob(input.fileBlobKey, { access: "private", useCache: false });
+
+    if (!blobResult || blobResult.statusCode !== 200 || !blobResult.stream) {
+        return { success: false, error: "The uploaded source file could not be read." };
+    }
+
+    if (blobResult.blob.size > MAX_KNOWLEDGE_SOURCE_SIZE) {
+        return { success: false, error: "Knowledge source must be 25MB or smaller." };
+    }
+
+    const fileBuffer = await new Response(blobResult.stream).arrayBuffer();
+    const file = new File([fileBuffer], input.fileName, {
+        type: blobResult.blob.contentType || input.mimeType,
+    });
 
     const sourceResult = await createKnowledgeSourceMetadata({
         ...input,
         origin: "manual-upload",
-        fileName: input.file.name,
-        fileUrl: input.fileUrl,
-        fileBlobKey: input.fileBlobKey,
-        mimeType: input.file.type,
-        fileSize: input.file.size,
+        fileName: input.fileName,
+        fileUrl: blobResult.blob.url,
+        fileBlobKey: blobResult.blob.pathname,
+        mimeType: file.type,
+        fileSize: blobResult.blob.size,
     });
 
     if (!sourceResult.success) {
         return sourceResult;
     }
 
-    const access = await getActiveWorkspaceAccess();
-
-    if ("error" in access) {
-        return { success: false, error: access.error };
-    }
-
     await updateKnowledgeSourceStatus({ sourceId: sourceResult.data._id, status: "processing" });
 
     try {
-        const parsed = await parseKnowledgeFile(input.file);
+        const parsed = await parseKnowledgeFile(file);
 
         if (parsed.chunks.length === 0) {
             throw new Error("No readable text was found in this source.");
@@ -682,7 +709,7 @@ export const processUploadedKnowledgeSource = async (
             })),
         );
 
-        await upsertKnowledgeChunks({
+        const embeddingResult = await upsertKnowledgeChunks({
             chunks: createdChunks,
             source: {
                 _id: sourceResult.data._id,
@@ -691,6 +718,20 @@ export const processUploadedKnowledgeSource = async (
                 version: sourceResult.data.version,
             },
         });
+
+        if (embeddingResult.embedded === 0) {
+            throw new Error(
+                `Vector indexing failed for all ${embeddingResult.failed || createdChunks.length} source chunks.`,
+            );
+        }
+
+        if (embeddingResult.failed > 0) {
+            console.warn("[Knowledge Source] embedding-partial-failure", {
+                sourceId: sourceResult.data._id,
+                embedded: embeddingResult.embedded,
+                failed: embeddingResult.failed,
+            });
+        }
 
         const readyResult = await updateKnowledgeSourceStatus({ sourceId: sourceResult.data._id, status: "ready" });
         return readyResult;
@@ -704,4 +745,44 @@ export const processUploadedKnowledgeSource = async (
 
         return { success: false, error: message };
     }
+};
+
+export const getKnowledgeSourceDownloadRecord = async (
+    sourceId: string,
+): Promise<ActionResult<KnowledgeSourceDownloadRecord>> => {
+    const access = await getActiveWorkspaceAccess();
+    if ("error" in access) return { success: false, error: access.error };
+    if (!Types.ObjectId.isValid(sourceId)) {
+        return { success: false, error: "That source could not be found." };
+    }
+
+    const source = await KnowledgeSource.findOne({
+        _id: sourceId,
+        workspaceId: access.workspace._id,
+        status: { $ne: "archived" },
+    }).select("scope teamIds fileName fileUrl fileBlobKey");
+
+    if (!source?.fileUrl || !source.fileBlobKey) {
+        return { success: false, error: "The original source file is unavailable." };
+    }
+
+    const memberTeamIds = new Set(
+        (access.membership.teamIds || []).map((teamId: Types.ObjectId) => teamId.toString()),
+    );
+    const canRead =
+        editableRoles.has(access.membership.role) ||
+        source.scope === "workspace" ||
+        source.teamIds.some((teamId: Types.ObjectId) => memberTeamIds.has(teamId.toString()));
+
+    if (!canRead) return { success: false, error: "You do not have access to this source." };
+
+    return {
+        success: true,
+        data: {
+            fileName: source.fileName || "knowledge-source",
+            fileUrl: source.fileUrl,
+            fileBlobKey: source.fileBlobKey,
+            isPrivate: source.fileUrl.includes(".private.blob."),
+        },
+    };
 };
