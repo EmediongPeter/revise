@@ -90,6 +90,7 @@ export const sampleBooks = [
 export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 export const ACCEPTED_PDF_TYPES = ['application/pdf'];
 export const MAX_KNOWLEDGE_SOURCE_SIZE = 25 * 1024 * 1024; // 25MB
+export const MAX_KNOWLEDGE_SOURCE_FILES = 10;
 export const ACCEPTED_KNOWLEDGE_SOURCE_TYPES = ['application/pdf', 'text/plain', 'text/markdown'];
 export const ACCEPTED_KNOWLEDGE_SOURCE_EXTENSIONS = ['.pdf', '.txt', '.md', '.markdown'];
 export const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useSignIn } from "@clerk/nextjs";
 import { ArrowRight, KeyRound, Loader2, Mail, Sparkles } from "lucide-react";
 import { FaGoogle } from "react-icons/fa";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getAuthErrorMessage } from "@/components/auth/AuthErrors";
@@ -21,7 +22,6 @@ const submitButtonClass =
     "h-[48px] w-full rounded-full bg-[var(--text-primary)] text-[15px] font-semibold text-[var(--text-inverse)] shadow-none hover:bg-[var(--accent-warm-hover)]";
 const backButtonClass =
     "cursor-pointer text-[15px] font-semibold text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text-primary)]";
-const errorClass = "rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm leading-5 text-red-500";
 
 const SignInForm = () => {
     const router = useRouter();
@@ -33,7 +33,10 @@ const SignInForm = () => {
     const [samlIdentifier, setSamlIdentifier] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isOAuthSubmitting, setIsOAuthSubmitting] = useState<string | null>(null);
-    const [error, setError] = useState("");
+
+    const showAuthError = (message: string) => {
+        toast.error(message, { duration: 5000 });
+    };
 
     const requestedRedirectUrl = searchParams.get("redirect_url") || searchParams.get("redirectUrl");
     const redirectUrl = requestedRedirectUrl
@@ -42,12 +45,10 @@ const SignInForm = () => {
 
     const resetToChoices = () => {
         setStep("choices");
-        setError("");
     };
 
     const handleEmailContinue = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        setError("");
         setStep("password");
     };
 
@@ -56,7 +57,6 @@ const SignInForm = () => {
         if (!isLoaded || !signIn) return;
 
         setIsSubmitting(true);
-        setError("");
 
         try {
             const result = await signIn.create({
@@ -71,9 +71,9 @@ const SignInForm = () => {
                 return;
             }
 
-            setError("This sign-in needs an extra verification step. Please use the code sent to your email or try another method.");
+            showAuthError("This sign-in needs an extra verification step. Please use the code sent to your email or try another method.");
         } catch (authError) {
-            setError(getAuthErrorMessage(authError));
+            showAuthError(getAuthErrorMessage(authError));
         } finally {
             setIsSubmitting(false);
         }
@@ -82,7 +82,6 @@ const SignInForm = () => {
     const handleOAuth = async (strategy: EnabledOAuthStrategy) => {
         if (!isLoaded || !signIn) return;
 
-        setError("");
         setIsOAuthSubmitting(strategy);
 
         try {
@@ -93,7 +92,7 @@ const SignInForm = () => {
             });
         } catch (authError) {
             setIsOAuthSubmitting(null);
-            setError(getAuthErrorMessage(authError));
+            showAuthError(getAuthErrorMessage(authError));
         }
     };
 
@@ -102,7 +101,6 @@ const SignInForm = () => {
         if (!isLoaded || !signIn) return;
 
         setIsSubmitting(true);
-        setError("");
 
         try {
             await signIn.authenticateWithRedirect({
@@ -113,7 +111,7 @@ const SignInForm = () => {
             } as never);
         } catch (authError) {
             setIsSubmitting(false);
-            setError(getAuthErrorMessage(authError));
+            showAuthError(getAuthErrorMessage(authError));
         }
     };
 
@@ -156,7 +154,6 @@ const SignInForm = () => {
                     placeholder="Enter your password..."
                     className={authInputClass}
                 />
-                {error && <p className={errorClass}>{error}</p>}
                 <Button type="submit" className={submitButtonClass} disabled={!isLoaded || isSubmitting}>
                     {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : "Log in"}
                     {!isSubmitting && <ArrowRight className="size-4" />}
@@ -182,7 +179,6 @@ const SignInForm = () => {
                     placeholder="name@company.com"
                     className={authInputClass}
                 />
-                {error && <p className={errorClass}>{error}</p>}
                 <Button type="submit" className={secondaryButtonClass} disabled={!isLoaded || isSubmitting}>
                     {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : "Continue with SAML SSO"}
                 </Button>
@@ -218,7 +214,6 @@ const SignInForm = () => {
                 <KeyRound className="size-4" />
                 Continue with SAML SSO
             </Button>
-            {error && <p className={errorClass}>{error}</p>}
             <p className="pt-6 text-center text-[14px] font-medium text-[var(--text-muted)]">
                 New to Revise?{" "}
                 <Link href="/sign-up" className="font-semibold text-[var(--text-primary)] hover:underline">

@@ -125,6 +125,16 @@ export type KnowledgeSourceOrigin = "manual-upload" | "google-drive" | "notion" 
 export type KnowledgeChunkStatus = "pending" | "embedded" | "failed";
 export type TrainingModuleStatus = "draft" | "ready" | "archived";
 export type TrainingModuleDifficulty = "intro" | "standard" | "advanced";
+export type TrainingPlanStatus = "draft" | "review" | "ready" | "archived";
+export type TrainingPlanGenerationStatus = "queued" | "generating" | "review" | "failed";
+export type TrainingPlanGoal =
+    | "onboarding"
+    | "sales-readiness"
+    | "support-readiness"
+    | "compliance"
+    | "product-knowledge"
+    | "operations"
+    | "custom";
 export type PracticeScenarioStatus = "draft" | "ready" | "archived";
 
 export interface IKnowledgeSource extends Document {
@@ -171,6 +181,42 @@ export interface IKnowledgeChunk extends Document {
     embeddingStatus: KnowledgeChunkStatus;
     embeddingModel?: string;
     metadata?: Record<string, unknown>;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface ITrainingPlan extends Document {
+    _id: Types.ObjectId;
+    workspaceId: Types.ObjectId;
+    teamIds: Types.ObjectId[];
+    sourceIds: Types.ObjectId[];
+    title: string;
+    description?: string;
+    objective?: string;
+    keyTopics: string[];
+    requiredKnowledge: string[];
+    practiceScenarios: string[];
+    commonMistakes: string[];
+    assessmentQuestions: string[];
+    rolePlayPrompts: string[];
+    assessmentCriteria: string[];
+    recommendedAssignments: string[];
+    missingSections: string[];
+    sourceReferenceNotes?: string;
+    trainerGuidance?: string;
+    goal: TrainingPlanGoal;
+    status: TrainingPlanStatus;
+    generationStatus: TrainingPlanGenerationStatus;
+    generationFailureReason?: string;
+    generatedBy?: "manual" | "ai";
+    generationPrompt?: string;
+    needsRegeneration?: boolean;
+    regenerationFeedback?: string;
+    lastRegeneratedAt?: Date;
+    blueprintVersion?: number;
+    createdByClerkId: string;
+    updatedByClerkId?: string;
+    archivedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -276,6 +322,7 @@ export interface FileUploadFieldProps<T extends FieldValues> {
     label: string;
     acceptTypes: string[];
     disabled?: boolean;
+    multiple?: boolean;
     icon: LucideIcon;
     placeholder: string;
     hint: string;

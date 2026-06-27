@@ -1,4 +1,5 @@
 import { splitKnowledgeText, type ParsedKnowledgeChunk } from "@/lib/knowledge/chunk";
+import { PDFParse } from "pdf-parse";
 
 export type ParsedKnowledgeSource = {
     chunks: ParsedKnowledgeChunk[];
@@ -11,33 +12,25 @@ const supportedTextTypes = new Set(["text/plain", "text/markdown"]);
 const getWordCount = (value: string) => value.split(/\s+/).filter(Boolean).length;
 
 const parsePdf = async (file: File): Promise<ParsedKnowledgeSource> => {
-    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const buffer = await file.arrayBuffer();
-    const document = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
-    const pageBlocks: { text: string; pageNumber: number }[] = [];
+    const parser = new PDFParse({ data: new Uint8Array(buffer) });
 
     try {
-        for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
-            const page = await document.getPage(pageNumber);
-            const textContent = await page.getTextContent();
-            const text = textContent.items
-                .map((item) => ("str" in item ? item.str : ""))
-                .filter(Boolean)
-                .join(" ");
+        const result = await parser.getText();
+        const pageBlocks = result.pages.map((page, index) => ({
+            text: page.text,
+            pageNumber: index + 1,
+        }));
+        const fullText = result.text || pageBlocks.map((block) => block.text).join("\n");
 
-            pageBlocks.push({ text, pageNumber });
-        }
+        return {
+            chunks: splitKnowledgeText(pageBlocks),
+            characterCount: fullText.length,
+            wordCount: getWordCount(fullText),
+        };
     } finally {
-        await document.destroy();
+        await parser.destroy();
     }
-
-    const fullText = pageBlocks.map((block) => block.text).join("\n");
-
-    return {
-        chunks: splitKnowledgeText(pageBlocks),
-        characterCount: fullText.length,
-        wordCount: getWordCount(fullText),
-    };
 };
 
 const parseText = async (file: File): Promise<ParsedKnowledgeSource> => {

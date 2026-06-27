@@ -44,7 +44,34 @@ const scopeOptions = [
     },
 ] as const;
 
-const KnowledgeSourceUploadForm = ({ teams, workspaceSlug }: { teams: TeamSummary[]; workspaceSlug: string }) => {
+const getUploadContentType = (file: File) => {
+    if (file.type) return file.type;
+
+    const fileName = file.name.toLowerCase();
+    if (fileName.endsWith(".pdf")) return "application/pdf";
+    if (fileName.endsWith(".md") || fileName.endsWith(".markdown")) return "text/markdown";
+
+    return "text/plain";
+};
+
+const getFileTitle = (title: string, file: File, fileCount: number) => {
+    if (fileCount === 1) return title.trim();
+
+    const fileTitle = file.name.replace(/\.[^/.]+$/, "").trim();
+    return fileTitle || title.trim();
+};
+
+const KnowledgeSourceUploadForm = ({
+    teams,
+    workspaceSlug,
+    variant = "page",
+    onUploaded,
+}: {
+    teams: TeamSummary[];
+    workspaceSlug: string;
+    variant?: "page" | "modal";
+    onUploaded?: () => void;
+}) => {
     const router = useRouter();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [scopePickerOpen, setScopePickerOpen] = useState(false);
@@ -53,17 +80,19 @@ const KnowledgeSourceUploadForm = ({ teams, workspaceSlug }: { teams: TeamSummar
     const teamPickerRef = useRef<HTMLDivElement>(null);
     const form = useForm<KnowledgeSourceUploadValues>({
         resolver: zodResolver(KnowledgeSourceUploadSchema),
+        mode: "onChange",
         defaultValues: {
             title: "",
             description: "",
             sourceType: "sop",
             scope: "workspace",
             teamIds: [],
-            file: undefined,
+            files: [],
         },
     });
     const scope = form.watch("scope");
     const selectedTeamIds = form.watch("teamIds");
+    const submitDisabled = isSubmitting || !form.formState.isValid;
     const selectedScopeOption = scopeOptions.find((option) => option.value === scope) || scopeOptions[0];
 
     useEffect(() => {
@@ -107,31 +136,51 @@ const KnowledgeSourceUploadForm = ({ teams, workspaceSlug }: { teams: TeamSummar
         setIsSubmitting(true);
 
         try {
-            const pathname = `knowledge/${crypto.randomUUID()}-${data.file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
-            const blob = await upload(pathname, data.file, {
-                access: "public",
-                handleUploadUrl: "/api/knowledge/upload",
-                contentType: data.file.type,
-            });
-            const result = await processUploadedKnowledgeSource({
-                title: data.title,
-                description: data.description,
-                sourceType: data.sourceType,
-                scope: data.scope,
-                teamIds: data.scope === "teams" ? data.teamIds : [],
-                file: data.file,
-                fileUrl: blob.url,
-                fileBlobKey: blob.pathname,
-            });
+            const failedUploads: string[] = [];
+            const uploadedSourceIds: string[] = [];
 
-            if (!result.success) {
-                toast.error(result.error);
+            for (const file of data.files) {
+                const pathname = `knowledge/${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
+                const blob = await upload(pathname, file, {
+                    access: "public",
+                    handleUploadUrl: "/api/knowledge/upload",
+                    contentType: getUploadContentType(file),
+                });
+                const result = await processUploadedKnowledgeSource({
+                    title: getFileTitle(data.title, file, data.files.length),
+                    description: data.description,
+                    sourceType: data.sourceType,
+                    scope: data.scope,
+                    teamIds: data.scope === "teams" ? data.teamIds : [],
+                    file,
+                    fileUrl: blob.url,
+                    fileBlobKey: blob.pathname,
+                });
+
+                if (!result.success) {
+                    failedUploads.push(`${file.name}: ${result.error}`);
+                } else {
+                    uploadedSourceIds.push(result.data._id);
+                }
+            }
+
+            if (failedUploads.length > 0) {
+                toast.error(`${failedUploads.length} source file${failedUploads.length === 1 ? "" : "s"} could not be processed.`);
                 return;
             }
 
-            toast.success("Knowledge source is ready.");
+            toast.success(
+                data.files.length === 1
+                    ? "Knowledge source is ready."
+                    : `${data.files.length} knowledge sources are ready.`,
+            );
             form.reset();
-            router.push(`/${workspaceSlug}/knowledge`);
+            onUploaded?.();
+            router.push(
+                uploadedSourceIds.length === 1
+                    ? `/${workspaceSlug}/knowledge/${uploadedSourceIds[0]}`
+                    : `/${workspaceSlug}/knowledge`,
+            );
             router.refresh();
         } catch (error) {
             console.error(error);
@@ -143,19 +192,25 @@ const KnowledgeSourceUploadForm = ({ teams, workspaceSlug }: { teams: TeamSummar
 
     return (
         <>
-            {isSubmitting && <LoadingOverlay />}
-            <div className="new-book-wrapper">
+            {isSubmitting && variant === "page" && (
+                <LoadingOverlay
+                    title="Processing Knowledge Sources"
+                    description="Please wait while we upload, parse, and prepare your source files for training."
+                />
+            )}
+            <div className={variant === "page" ? "new-book-wrapper" : "max-h-[calc(100vh-13rem)] overflow-y-auto pr-1"}>
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-7">
+                    <form onSubmit={form.handleSubmit(onSubmit)} className={variant === "page" ? "space-y-7" : "space-y-5"}>
                         <FileUploader
                             control={form.control}
-                            name="file"
+                            name="files"
                             label="Knowledge source file"
                             acceptTypes={ACCEPTED_KNOWLEDGE_SOURCE_EXTENSIONS}
                             icon={Upload}
-                            placeholder="Upload SOP, handbook, script, or policy"
-                            hint="PDF, TXT, or Markdown file, up to 25MB"
+                            placeholder="Upload SOPs, handbooks, scripts, or policies"
+                            hint="PDF, TXT, or Markdown files, up to 25MB each"
                             disabled={isSubmitting}
+                            multiple
                         />
 
                         <FormField
@@ -363,8 +418,12 @@ const KnowledgeSourceUploadForm = ({ teams, workspaceSlug }: { teams: TeamSummar
                             />
                         )}
 
-                        <Button type="submit" className="form-btn" disabled={isSubmitting}>
-                            Upload knowledge source
+                        <Button
+                            type="submit"
+                            className="form-btn disabled:opacity-40"
+                            disabled={submitDisabled}
+                        >
+                            {isSubmitting ? "Processing source..." : "Upload knowledge source"}
                         </Button>
                     </form>
                 </Form>
