@@ -26,7 +26,11 @@ const getWordCount = (value: string) => value.split(/\s+/).filter(Boolean).lengt
 const tokenTargetToWordTarget = (tokens: number) =>
     Number.isFinite(tokens) && tokens > 0 ? Math.max(120, Math.floor(tokens * 0.75)) : 375;
 const tokenOverlapToWordOverlap = (tokens: number) =>
-    Number.isFinite(tokens) && tokens >= 0 ? Math.max(20, Math.floor(tokens * 0.75)) : 60;
+    Number.isFinite(tokens) && tokens === 0
+        ? 0
+        : Number.isFinite(tokens) && tokens > 0
+          ? Math.max(20, Math.floor(tokens * 0.75))
+          : 60;
 
 export const splitKnowledgeText = (
     blocks: TextBlock[],

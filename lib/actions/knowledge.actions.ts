@@ -18,6 +18,7 @@ import {
 } from "@/lib/constants";
 import { upsertKnowledgeChunks } from "@/lib/ai/pinecone";
 import { parseKnowledgeFile } from "@/lib/knowledge/parse";
+import { isKnowledgeUploadPathOwnedBy } from "@/lib/knowledge/upload-path";
 import { serializeData } from "@/lib/utils";
 import type {
     IKnowledgeSource,
@@ -642,12 +643,20 @@ export const processUploadedKnowledgeSource = async (
     if (input.fileSize > MAX_KNOWLEDGE_SOURCE_SIZE) {
         return { success: false, error: "Knowledge source must be 25MB or smaller." };
     }
-    if (!input.fileBlobKey.startsWith("knowledge/") || !input.fileUrl.includes(".private.blob.")) {
-        return { success: false, error: "The uploaded source location is invalid." };
-    }
-
     const access = await getActiveWorkspaceAccess();
     if ("error" in access) return { success: false, error: access.error };
+    const accessError = ensureEditor(access.membership);
+    if (accessError) return { success: false, error: accessError };
+    if (
+        !input.fileUrl.includes(".private.blob.") ||
+        !isKnowledgeUploadPathOwnedBy(
+            input.fileBlobKey,
+            access.workspace._id.toString(),
+            access.userId,
+        )
+    ) {
+        return { success: false, error: "The uploaded source location is invalid." };
+    }
 
     const blobResult = await getBlob(input.fileBlobKey, { access: "private", useCache: false });
 

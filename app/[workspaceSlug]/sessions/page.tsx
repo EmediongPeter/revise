@@ -47,7 +47,9 @@ const WorkspaceSessionsPage = async ({
                                 </span>
                                 <span className="text-sm capitalize text-[var(--text-secondary)]">{session.status.replace("_", " ")}</span>
                                 <span className="text-sm text-[var(--text-muted)]">{session.progressPercent}% complete</span>
-                                <span className="text-sm text-[var(--text-muted)]">{session.score ? `${session.score}%` : "-"}</span>
+                                <span className="text-sm text-[var(--text-muted)]">
+                                    {typeof session.score === "number" ? `${session.score}%` : "-"}
+                                </span>
                             </Link>
                         ))}
                     </div>

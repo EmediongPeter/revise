@@ -64,11 +64,13 @@ const getFileTitle = (title: string, file: File, fileCount: number) => {
 const KnowledgeSourceUploadForm = ({
     teams,
     workspaceSlug,
+    knowledgeUploadPrefix,
     variant = "page",
     onUploaded,
 }: {
     teams: TeamSummary[];
     workspaceSlug: string;
+    knowledgeUploadPrefix: string;
     variant?: "page" | "modal";
     onUploaded?: () => void;
 }) => {
@@ -141,7 +143,7 @@ const KnowledgeSourceUploadForm = ({
 
             for (const file of data.files) {
                 try {
-                    const pathname = `knowledge/${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
+                    const pathname = `${knowledgeUploadPrefix}${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
                     const contentType = getUploadContentType(file);
                     const blob = await upload(pathname, file, {
                         access: "private",

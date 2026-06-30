@@ -1106,10 +1106,19 @@ const Navbar = () => {
         if (Math.abs(event.clientX - dragStart.current.x) > 3) dragMoved.current = true;
         const nextWidth = clampSidebarWidth(dragStart.current.width + event.clientX - dragStart.current.x);
         setSidebarWidth(nextWidth);
-        window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(nextWidth));
     };
 
     const handleResizePointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+        if (dragStart.current) {
+            const finalWidth = clampSidebarWidth(
+                dragStart.current.width + event.clientX - dragStart.current.x,
+            );
+            try {
+                window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(finalWidth));
+            } catch {
+                // Sidebar resizing should still work when storage is unavailable.
+            }
+        }
         dragStart.current = null;
         event.currentTarget.releasePointerCapture(event.pointerId);
     };

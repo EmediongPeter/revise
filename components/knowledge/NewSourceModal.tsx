@@ -145,6 +145,7 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
     const router = useRouter();
     const [open, setOpen] = useState(false);
     const [resolvedWorkspaceSlug, setResolvedWorkspaceSlug] = useState(workspaceSlug);
+    const [knowledgeUploadPrefix, setKnowledgeUploadPrefix] = useState("");
     const [teams, setTeams] = useState<TeamSummary[]>([]);
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -181,7 +182,12 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
     const activeType = sourceTypeOptions.find((item) => item.value === sourceType) || sourceTypeOptions[0];
     const activeIcon = sourceIcons.find((item) => item.key === selectedIcon) || sourceIcons[0];
     const ActiveIcon = activeIcon.icon;
-    const uploadReady = origin === "upload" && Boolean(resolvedWorkspaceSlug) && form.formState.isValid && !submitting;
+    const uploadReady =
+        origin === "upload" &&
+        Boolean(resolvedWorkspaceSlug) &&
+        Boolean(knowledgeUploadPrefix) &&
+        form.formState.isValid &&
+        !submitting;
     const previewReady =
         origin === "paste"
             ? title.trim().length >= 2 && pasteText.trim().length > 0
@@ -218,7 +224,7 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
     useEffect(() => {
         let mounted = true;
 
-        if (!open || (resolvedWorkspaceSlug && teams.length > 0)) return;
+        if (!open || (resolvedWorkspaceSlug && teams.length > 0 && knowledgeUploadPrefix)) return;
 
         setLoading(true);
         setError(undefined);
@@ -234,6 +240,7 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
 
                 setResolvedWorkspaceSlug((current) => current || result.data.activeWorkspace.slug);
                 setTeams(result.data.teams);
+                setKnowledgeUploadPrefix(result.data.knowledgeUploadPrefix);
             })
             .catch(() => {
                 if (mounted) setError("Could not load workspace teams.");
@@ -245,7 +252,7 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
         return () => {
             mounted = false;
         };
-    }, [open, resolvedWorkspaceSlug, teams.length]);
+    }, [knowledgeUploadPrefix, open, resolvedWorkspaceSlug, teams.length]);
 
     useEffect(() => {
         if (!open) return;
@@ -344,7 +351,7 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
 
             for (const file of data.files) {
                 try {
-                    const pathname = `knowledge/${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
+                    const pathname = `${knowledgeUploadPrefix}${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
                     const contentType = getUploadContentType(file);
                     const blob = await upload(pathname, file, {
                         access: "private",
@@ -424,14 +431,19 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
                 return;
             }
 
-            toast.success(data.files.length === 1 ? "Source created" : "Sources created", {
-                description: data.files.length === 1 ? getFileTitle(data.title, data.files[0], data.files.length) : `${data.files.length} sources uploaded`,
-                duration: 12000,
-                action: {
-                    label: uploadedSourceIds.length === 1 ? "View source" : "View sources",
-                    onClick: () => router.push(nextHref),
-                },
-            });
+            if (failedUploads.length === 0) {
+                toast.success(uploadedSourceIds.length === 1 ? "Source created" : "Sources created", {
+                    description:
+                        uploadedSourceIds.length === 1
+                            ? getFileTitle(data.title, data.files[0], data.files.length)
+                            : `${uploadedSourceIds.length} sources uploaded`,
+                    duration: 12000,
+                    action: {
+                        label: uploadedSourceIds.length === 1 ? "View source" : "View sources",
+                        onClick: () => router.push(nextHref),
+                    },
+                });
+            }
             setOpen(false);
             resetModal();
             router.push(nextHref);

@@ -159,7 +159,7 @@ const SignUpForm = () => {
                 strategy: "enterprise_sso" as never,
                 identifier: samlIdentifier,
                 redirectUrl: "/sso-callback",
-                redirectUrlComplete: "/onboarding",
+                redirectUrlComplete: redirectUrl,
             } as never);
         } catch (authError) {
             setIsSubmitting(false);

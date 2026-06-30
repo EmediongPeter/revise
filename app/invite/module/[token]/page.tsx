@@ -28,7 +28,7 @@ const ModuleInvitePage = async ({
                 <h1 className="mt-3 text-2xl font-semibold text-[var(--text-primary)]">We could not accept this invite</h1>
                 <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{result.error}</p>
                 <Link
-                    href="/sign-in"
+                    href={`/sign-in?redirect_url=${encodeURIComponent(invitePath)}`}
                     className="mt-5 inline-flex h-10 items-center rounded-full bg-[#d97757] px-4 text-sm font-semibold text-white"
                 >
                     Sign in with another account

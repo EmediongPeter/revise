@@ -207,13 +207,17 @@ const FileUploader = <T extends FieldValues>({
                         isDragging && "border-[#d97757] bg-[#d97757]/10",
                     )}
                     onClick={() => !disabled && inputRef.current?.click()}
-                    onKeyDown={(event) => {
-                        if (disabled || (event.key !== "Enter" && event.key !== " ")) return;
-                        event.preventDefault();
-                        inputRef.current?.click();
-                    }}
-                    role="button"
-                    tabIndex={disabled ? -1 : 0}
+                    onKeyDown={
+                        isUploaded
+                            ? undefined
+                            : (event) => {
+                                  if (disabled || (event.key !== "Enter" && event.key !== " ")) return;
+                                  event.preventDefault();
+                                  inputRef.current?.click();
+                              }
+                    }
+                    role={isUploaded ? undefined : "button"}
+                    tabIndex={isUploaded || disabled ? undefined : 0}
                     aria-disabled={disabled}
                     onDragEnter={(event) => {
                         event.preventDefault();

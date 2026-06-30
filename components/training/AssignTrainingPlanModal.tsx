@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CalendarDays, Check, Clock3, Copy, MailPlus, Send, Users, X } from "lucide-react";
 import { assignTrainingModule, type AssignmentLinkSummary } from "@/lib/actions/practice.actions";
@@ -31,6 +32,7 @@ const AssignTrainingPlanModal = ({
     disabled?: boolean;
     compact?: boolean;
 }) => {
+    const router = useRouter();
     const [open, setOpen] = useState(false);
     const [inviteOpen, setInviteOpen] = useState(false);
     const [selectedTeamIds, setSelectedTeamIds] = useState(teams.map((team) => team._id));
@@ -69,8 +71,15 @@ const AssignTrainingPlanModal = ({
     };
 
     const copyLink = async (link: string) => {
-        await navigator.clipboard.writeText(link);
-        toast.success("Invite link copied.");
+        try {
+            if (!navigator.clipboard?.writeText) {
+                throw new Error("Clipboard access is unavailable.");
+            }
+            await navigator.clipboard.writeText(link);
+            toast.success("Invite link copied.");
+        } catch {
+            toast.error("Could not copy the invite link.");
+        }
     };
 
     const stageAssignment = async () => {
@@ -97,6 +106,7 @@ const AssignTrainingPlanModal = ({
 
             setLinks(result.data.links);
             toast.success("Assignment ready. Copy invite links for trainees.");
+            router.refresh();
         } finally {
             setIsAssigning(false);
         }
@@ -116,6 +126,7 @@ const AssignTrainingPlanModal = ({
                         </span>
                         <button
                             type="button"
+                            aria-label={`Copy invite link for ${link.memberName || link.email || "assigned trainee"}`}
                             onClick={() => copyLink(link.inviteUrl)}
                             className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-[var(--border-subtle)] text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                         >
@@ -239,6 +250,21 @@ const AssignTrainingPlanModal = ({
                         <p className="px-2.5 py-2 text-[12px] text-[var(--text-muted)]">No workspace members found.</p>
                     )}
 
+                    {selectedMemberIds.length > 0 && (
+                        <div className="border-t border-[var(--border-subtle)] px-2.5 py-2">
+                            <button
+                                type="button"
+                                onClick={stageAssignment}
+                                disabled={isAssigning}
+                                className="inline-flex h-9 w-full cursor-pointer items-center justify-center rounded-lg bg-[#d97757] px-3 text-sm font-semibold text-white transition hover:bg-[#c96849] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {isAssigning
+                                    ? "Assigning..."
+                                    : `Assign ${selectedMemberIds.length} selected`}
+                            </button>
+                        </div>
+                    )}
+
                     <div className="px-2.5 py-1 text-[12px] text-[var(--text-muted)]">New user</div>
                     <button
                         type="button"
@@ -252,6 +278,7 @@ const AssignTrainingPlanModal = ({
                         <span className="text-[13px] font-medium text-[var(--text-primary)]">Invite and add...</span>
                     </button>
                 </div>
+                {links.length > 0 && <div className="px-1.5 pb-1.5">{inviteLinksPanel}</div>}
                 {inviteModal}
             </div>
         );

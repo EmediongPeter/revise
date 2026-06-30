@@ -19,7 +19,11 @@ const NewKnowledgeSourcePageContent = async ({ workspaceSlug }: { workspaceSlug:
                 </p>
             </section>
 
-            <KnowledgeSourceUploadForm teams={result.data.teams} workspaceSlug={workspaceSlug} />
+            <KnowledgeSourceUploadForm
+                teams={result.data.teams}
+                workspaceSlug={workspaceSlug}
+                knowledgeUploadPrefix={result.data.knowledgeUploadPrefix}
+            />
         </main>
     );
 };

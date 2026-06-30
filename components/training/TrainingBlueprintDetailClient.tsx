@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Dialog } from "radix-ui";
 import { toast } from "sonner";
 import {
     ArrowDown,
@@ -125,10 +126,24 @@ const sourceTypeLabels: Record<string, string> = {
 };
 
 const TRAINING_PROPERTIES_OPEN_KEY = "revise.training.propertiesPanel.open";
+const TRAINING_PROPERTIES_CHANGE_EVENT = "revise:training-properties-change";
 
-const getInitialPropertiesOpen = () => {
-    if (typeof window === "undefined") return true;
-    return window.localStorage.getItem(TRAINING_PROPERTIES_OPEN_KEY) !== "false";
+const getPropertiesOpenSnapshot = () => {
+    try {
+        return window.localStorage.getItem(TRAINING_PROPERTIES_OPEN_KEY) !== "false";
+    } catch {
+        return true;
+    }
+};
+
+const subscribeToPropertiesOpen = (onStoreChange: () => void) => {
+    window.addEventListener("storage", onStoreChange);
+    window.addEventListener(TRAINING_PROPERTIES_CHANGE_EVENT, onStoreChange);
+
+    return () => {
+        window.removeEventListener("storage", onStoreChange);
+        window.removeEventListener(TRAINING_PROPERTIES_CHANGE_EVENT, onStoreChange);
+    };
 };
 
 const regenerationSectionOptions: Array<{ field: TrainingBlueprintRegenerationField; label: string }> = [
@@ -611,38 +626,41 @@ const RegenerateDraftModal = ({
     onSubmit: () => void;
 }) => {
     const selectedSectionOption = regenerationSectionOptions.find((option) => option.field === selectedSection) || regenerationSectionOptions[0];
-
-    useEffect(() => {
-        if (!open) return;
-
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "Escape" && !isPending) onClose();
-        };
-
-        window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
-    }, [isPending, onClose, open]);
+    const feedbackRef = useRef<HTMLTextAreaElement>(null);
 
     if (!open) return null;
 
-    return createPortal(
-        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/35 px-4 py-6 backdrop-blur-[2px]">
-            <button
-                type="button"
-                aria-label="Close regenerate draft dialog"
-                className="absolute inset-0 cursor-default"
-                onClick={isPending ? undefined : onClose}
-            />
-            <section className="relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-visible rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+    return (
+        <Dialog.Root
+            open={open}
+            onOpenChange={(nextOpen) => {
+                if (!nextOpen && !isPending) onClose();
+            }}
+        >
+            <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 z-[500] bg-black/35 backdrop-blur-[2px]" />
+                <Dialog.Content
+                    className="fixed left-1/2 top-1/2 z-[501] flex max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-visible rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault();
+                        feedbackRef.current?.focus();
+                    }}
+                    onEscapeKeyDown={(event) => {
+                        if (isPending) event.preventDefault();
+                    }}
+                    onPointerDownOutside={(event) => {
+                        if (isPending) event.preventDefault();
+                    }}
+                >
                 <header className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] px-6 py-5">
                     <div>
                         <div className="mb-3 flex size-10 items-center justify-center rounded-xl bg-[var(--bg-secondary)] text-[#d97757]">
                             <RotateCcw className="size-5" />
                         </div>
-                        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Regenerate draft</h2>
-                        <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+                        <Dialog.Title className="text-lg font-semibold text-[var(--text-primary)]">Regenerate draft</Dialog.Title>
+                        <Dialog.Description className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
                             Refresh the whole training module or target one section with specific feedback.
-                        </p>
+                        </Dialog.Description>
                     </div>
                     <button
                         type="button"
@@ -741,6 +759,7 @@ const RegenerateDraftModal = ({
                             Feedback
                         </label>
                         <textarea
+                            ref={feedbackRef}
                             value={feedback}
                             onChange={(event) => onFeedbackChange(event.target.value)}
                             placeholder="Tell AI what should change..."
@@ -769,9 +788,9 @@ const RegenerateDraftModal = ({
                         {isPending ? "Regenerating" : defaultMode === "section" ? "Regenerate section" : "Regenerate draft"}
                     </button>
                 </footer>
-            </section>
-        </div>,
-        document.body,
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
     );
 };
 
@@ -821,39 +840,42 @@ const SourceSelectionModal = ({
             .filter(Boolean)
             .some((value) => value?.toLowerCase().includes(normalizedSearch));
     });
-
-    useEffect(() => {
-        if (!open) return;
-
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "Escape" && !isPending) onClose();
-        };
-
-        window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
-    }, [isPending, onClose, open]);
+    const searchInputRef = useRef<HTMLInputElement>(null);
 
     if (!open) return null;
 
-    return createPortal(
-        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/35 px-4 py-6 backdrop-blur-[2px]">
-            <button
-                type="button"
-                aria-label="Close add source dialog"
-                className="absolute inset-0 cursor-default"
-                onClick={isPending ? undefined : onClose}
-            />
-            <section className="relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+    return (
+        <Dialog.Root
+            open={open}
+            onOpenChange={(nextOpen) => {
+                if (!nextOpen && !isPending) onClose();
+            }}
+        >
+            <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 z-[500] bg-black/35 backdrop-blur-[2px]" />
+                <Dialog.Content
+                    className="fixed left-1/2 top-1/2 z-[501] flex max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault();
+                        searchInputRef.current?.focus();
+                    }}
+                    onEscapeKeyDown={(event) => {
+                        if (isPending) event.preventDefault();
+                    }}
+                    onPointerDownOutside={(event) => {
+                        if (isPending) event.preventDefault();
+                    }}
+                >
                 <header className="border-b border-[var(--border-subtle)] px-6 py-5">
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <div className="mb-3 flex size-10 items-center justify-center rounded-xl bg-[var(--bg-secondary)] text-[#d97757]">
                                 <BookOpenCheck className="size-5" />
                             </div>
-                            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Add sources</h2>
-                            <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+                            <Dialog.Title className="text-lg font-semibold text-[var(--text-primary)]">Add sources</Dialog.Title>
+                            <Dialog.Description className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
                                 Attach ready knowledge sources to this training module.
-                            </p>
+                            </Dialog.Description>
                         </div>
                         <button
                             type="button"
@@ -869,6 +891,7 @@ const SourceSelectionModal = ({
                         <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3">
                             <Search className="size-4 shrink-0 text-[var(--text-muted)]" />
                             <input
+                                ref={searchInputRef}
                                 value={search}
                                 onChange={(event) => onSearchChange(event.target.value)}
                                 placeholder="Search sources..."
@@ -971,9 +994,9 @@ const SourceSelectionModal = ({
                         </button>
                     </div>
                 </footer>
-            </section>
-        </div>,
-        document.body,
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
     );
 };
 
@@ -985,7 +1008,11 @@ const TrainingBlueprintDetailClient = ({
     workspaceSlug: string;
 }) => {
     const router = useRouter();
-    const [propertiesOpen, setPropertiesOpen] = useState(getInitialPropertiesOpen);
+    const propertiesOpen = useSyncExternalStore(
+        subscribeToPropertiesOpen,
+        getPropertiesOpenSnapshot,
+        () => true,
+    );
     const [favorite, setFavorite] = useState(false);
     const [activeMenu, setActiveMenu] = useState<ActiveMenu | null>(null);
     const [sourceModalOpen, setSourceModalOpen] = useState(false);
@@ -1004,11 +1031,16 @@ const TrainingBlueprintDetailClient = ({
     const [isPending, startTransition] = useTransition();
 
     const setStoredPropertiesOpen = useCallback((value: boolean | ((current: boolean) => boolean)) => {
-        setPropertiesOpen((current) => {
-            const next = typeof value === "function" ? value(current) : value;
+        const current = getPropertiesOpenSnapshot();
+        const next = typeof value === "function" ? value(current) : value;
+
+        try {
             window.localStorage.setItem(TRAINING_PROPERTIES_OPEN_KEY, String(next));
-            return next;
-        });
+        } catch {
+            // Keep the in-memory default when storage is unavailable.
+        }
+
+        window.dispatchEvent(new Event(TRAINING_PROPERTIES_CHANGE_EVENT));
     }, []);
 
     const teamLabel = useMemo(() => {

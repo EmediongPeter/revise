@@ -367,12 +367,15 @@ export const assignTrainingModule = async (
           })
         : [];
 
-    for (const member of targetMembers) {
+    const upsertAssignmentForMember = async (member: IWorkspaceMember): Promise<AssignmentLinkSummary> => {
         const existing = await ModuleAssignment.findOne({
             workspaceId: access.workspace._id,
             trainingPlanId: plan._id,
-            assignedToMemberId: member._id,
             status: { $ne: "cancelled" },
+            $or: [
+                { assignedToMemberId: member._id },
+                { inviteEmail: member.email },
+            ],
         });
         const inviteToken = existing?.inviteToken || token();
         const assignment = existing || await ModuleAssignment.create({
@@ -392,6 +395,11 @@ export const assignTrainingModule = async (
         });
 
         if (existing) {
+            existing.assignedToMemberId = member._id;
+            existing.inviteEmail = member.email;
+            if (existing.status === "invited" && member.status === "active") {
+                existing.status = "assigned";
+            }
             existing.required = required;
             existing.dueDate = dueDate;
             existing.guidanceOverride = guidanceOverride;
@@ -401,13 +409,17 @@ export const assignTrainingModule = async (
             await existing.save();
         }
 
-        links.push({
+        return {
             assignmentId: assignment._id.toString(),
             email: member.email,
             memberName: member.displayName,
             inviteUrl: assignmentInviteUrl(inviteToken),
             status: assignment.status,
-        });
+        };
+    };
+
+    for (const member of targetMembers) {
+        links.push(await upsertAssignmentForMember(member));
     }
 
     for (const email of parseEmails(input.inviteEmails)) {
@@ -434,46 +446,7 @@ export const assignTrainingModule = async (
             memberUpdate,
             { upsert: true, new: true, setDefaultsOnInsert: true },
         );
-        const existing = await ModuleAssignment.findOne({
-            workspaceId: access.workspace._id,
-            trainingPlanId: plan._id,
-            inviteEmail: email,
-            status: { $ne: "cancelled" },
-        });
-        const inviteToken = existing?.inviteToken || token();
-        const assignment = existing || await ModuleAssignment.create({
-            workspaceId: access.workspace._id,
-            trainingPlanId: plan._id,
-            assignedToMemberId: member._id,
-            inviteEmail: email,
-            inviteToken,
-            status: "invited",
-            required,
-            dueDate,
-            guidanceOverride,
-            sessionDurationMinutes,
-            totalScenarioCount: scenarios.length,
-            createdByClerkId: access.userId,
-            updatedByClerkId: access.userId,
-        });
-
-        if (existing) {
-            existing.required = required;
-            existing.dueDate = dueDate;
-            existing.guidanceOverride = guidanceOverride;
-            existing.sessionDurationMinutes = sessionDurationMinutes;
-            existing.totalScenarioCount = scenarios.length;
-            existing.updatedByClerkId = access.userId;
-            await existing.save();
-        }
-
-        links.push({
-            assignmentId: assignment._id.toString(),
-            email,
-            memberName: member.displayName,
-            inviteUrl: assignmentInviteUrl(inviteToken),
-            status: assignment.status,
-        });
+        links.push(await upsertAssignmentForMember(member));
     }
 
     if (links.length === 0) {
@@ -508,6 +481,13 @@ export const acceptModuleInvite = async (inviteToken: string): Promise<ActionRes
         return { success: false, error: "That workspace no longer exists." };
     }
 
+    if (assignment.inviteEmail && assignment.inviteEmail.toLowerCase() !== identity.email.toLowerCase()) {
+        return {
+            success: false,
+            error: `This invite was sent to ${assignment.inviteEmail}. Sign in with that email to accept it.`,
+        };
+    }
+
     let member = assignment.assignedToMemberId
         ? await WorkspaceMember.findOne({ _id: assignment.assignedToMemberId, workspaceId: workspace._id })
         : null;
@@ -526,10 +506,6 @@ export const acceptModuleInvite = async (inviteToken: string): Promise<ActionRes
             status: "active",
             invitedByClerkId: assignment.createdByClerkId,
         });
-    }
-
-    if (assignment.inviteEmail && assignment.inviteEmail !== identity.email) {
-        return { success: false, error: `This invite was sent to ${assignment.inviteEmail}. Sign in with that email to accept it.` };
     }
 
     const activatedMember = await WorkspaceMember.findByIdAndUpdate(

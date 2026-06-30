@@ -246,6 +246,7 @@ const PracticeRoomClient = ({
                         <form onSubmit={submit} className="border-t border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4">
                             <div className="mx-auto flex max-w-3xl items-end gap-3">
                                 <textarea
+                                    aria-label="Your response to the AI trainer"
                                     value={message}
                                     onChange={(event) => setMessage(event.target.value)}
                                     placeholder="Type your response to the AI trainer..."

@@ -907,8 +907,12 @@ export const updateTrainingPlanProperties = async (
         updates.iconKey = input.iconKey.trim().slice(0, 40) || "clipboard";
     }
 
-    if (typeof input.iconColor === "string" && /^#[0-9a-fA-F]{6}$/.test(input.iconColor.trim())) {
-        updates.iconColor = input.iconColor.trim();
+    if (typeof input.iconColor === "string") {
+        const iconColor = input.iconColor.trim();
+        if (!/^#[0-9a-fA-F]{6}$/.test(iconColor)) {
+            return { success: false, error: "Choose a valid six-digit hex icon color." };
+        }
+        updates.iconColor = iconColor;
     }
 
     if (input.goal) {

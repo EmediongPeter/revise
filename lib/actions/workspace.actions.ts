@@ -10,6 +10,7 @@ import Workspace from "@/database/models/workspace.model";
 import WorkspaceMember from "@/database/models/workspace-member.model";
 import { slugifyWorkspace } from "@/lib/onboarding";
 import { serializeData } from "@/lib/utils";
+import { getKnowledgeUploadPrefix } from "@/lib/knowledge/upload-path";
 import type { ITeam, IWorkspace, IWorkspaceMember, IUserProfile } from "@/types";
 
 export type WorkspaceSummary = {
@@ -37,6 +38,7 @@ export type WorkspaceTeamData = {
     activeWorkspace: WorkspaceSummary;
     workspaces: WorkspaceSummary[];
     teams: TeamSummary[];
+    knowledgeUploadPrefix: string;
 };
 
 type ActionResult<T = undefined> =
@@ -175,6 +177,7 @@ export const getWorkspaceTeamData = async (): Promise<ActionResult<WorkspaceTeam
                 serializeWorkspace(workspace, roleByWorkspaceId.get(workspace._id.toString()) || "member"),
             ),
             teams: teams.map(serializeTeam),
+            knowledgeUploadPrefix: getKnowledgeUploadPrefix(activeWorkspace._id.toString(), userId),
         }),
     };
 };
@@ -315,7 +318,15 @@ export const createWorkspace = async (input: {
     revalidatePath("/settings");
 
     const result = await getWorkspaceTeamData();
-    return result.success ? result : { success: true, data: serializeData({ activeWorkspace: serializeWorkspace(workspace, "owner"), workspaces: [serializeWorkspace(workspace, "owner")], teams: [] }) };
+    return result.success ? result : {
+        success: true,
+        data: serializeData({
+            activeWorkspace: serializeWorkspace(workspace, "owner"),
+            workspaces: [serializeWorkspace(workspace, "owner")],
+            teams: [],
+            knowledgeUploadPrefix: getKnowledgeUploadPrefix(workspace._id.toString(), userId),
+        }),
+    };
 };
 
 export const updateActiveWorkspace = async (input: {
