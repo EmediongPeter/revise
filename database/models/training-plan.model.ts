@@ -8,6 +8,8 @@ const TrainingPlanSchema = new Schema<ITrainingPlan>(
         sourceIds: [{ type: Schema.Types.ObjectId, ref: "KnowledgeSource", required: true, index: true }],
         title: { type: String, required: true, trim: true },
         description: { type: String, trim: true },
+        iconKey: { type: String, trim: true, default: "clipboard" },
+        iconColor: { type: String, trim: true, default: "#d97757" },
         objective: { type: String, trim: true },
         keyTopics: [{ type: String, trim: true }],
         requiredKnowledge: [{ type: String, trim: true }],

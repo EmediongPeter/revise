@@ -9,6 +9,9 @@ const isSafeInternalRedirect = (value?: string): value is string => {
     return true;
 };
 
+const isInviteRedirect = (value?: string): value is string =>
+    isSafeInternalRedirect(value) && value.startsWith("/invite/module/");
+
 const AuthRedirectPage = async ({
     searchParams,
 }: {
@@ -23,18 +26,22 @@ const AuthRedirectPage = async ({
         redirect("/sign-in");
     }
 
+    const requestedRedirect = redirect_url || redirectUrl;
+
+    if (isInviteRedirect(requestedRedirect)) {
+        redirect(requestedRedirect);
+    }
+
     if (!onboardingStatus.completed) {
         redirect("/onboarding");
     }
 
-    const requestedRedirect = redirect_url || redirectUrl;
+    if (!onboardingStatus.workspaceSlug) {
+        redirect("/onboarding");
+    }
 
     if (isSafeInternalRedirect(requestedRedirect)) {
         redirect(requestedRedirect);
-    }
-
-    if (!onboardingStatus.workspaceSlug) {
-        redirect("/onboarding");
     }
 
     redirect(`/${onboardingStatus.workspaceSlug}`);

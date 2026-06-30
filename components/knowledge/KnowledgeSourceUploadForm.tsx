@@ -64,11 +64,13 @@ const getFileTitle = (title: string, file: File, fileCount: number) => {
 const KnowledgeSourceUploadForm = ({
     teams,
     workspaceSlug,
+    knowledgeUploadPrefix,
     variant = "page",
     onUploaded,
 }: {
     teams: TeamSummary[];
     workspaceSlug: string;
+    knowledgeUploadPrefix: string;
     variant?: "page" | "modal";
     onUploaded?: () => void;
 }) => {
@@ -140,40 +142,56 @@ const KnowledgeSourceUploadForm = ({
             const uploadedSourceIds: string[] = [];
 
             for (const file of data.files) {
-                const pathname = `knowledge/${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
-                const blob = await upload(pathname, file, {
-                    access: "public",
-                    handleUploadUrl: "/api/knowledge/upload",
-                    contentType: getUploadContentType(file),
-                });
-                const result = await processUploadedKnowledgeSource({
-                    title: getFileTitle(data.title, file, data.files.length),
-                    description: data.description,
-                    sourceType: data.sourceType,
-                    scope: data.scope,
-                    teamIds: data.scope === "teams" ? data.teamIds : [],
-                    file,
-                    fileUrl: blob.url,
-                    fileBlobKey: blob.pathname,
-                });
+                try {
+                    const pathname = `${knowledgeUploadPrefix}${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
+                    const contentType = getUploadContentType(file);
+                    const blob = await upload(pathname, file, {
+                        access: "private",
+                        handleUploadUrl: "/api/knowledge/upload",
+                        contentType,
+                    });
+                    const result = await processUploadedKnowledgeSource({
+                        title: getFileTitle(data.title, file, data.files.length),
+                        description: data.description,
+                        sourceType: data.sourceType,
+                        scope: data.scope,
+                        teamIds: data.scope === "teams" ? data.teamIds : [],
+                        fileName: file.name,
+                        mimeType: contentType,
+                        fileSize: file.size,
+                        fileUrl: blob.url,
+                        fileBlobKey: blob.pathname,
+                    });
 
-                if (!result.success) {
-                    failedUploads.push(`${file.name}: ${result.error}`);
-                } else {
-                    uploadedSourceIds.push(result.data._id);
+                    if (!result.success) {
+                        failedUploads.push(`${file.name}: ${result.error}`);
+                    } else {
+                        uploadedSourceIds.push(result.data._id);
+                    }
+                } catch (error) {
+                    failedUploads.push(
+                        `${file.name}: ${error instanceof Error ? error.message : "Upload failed."}`,
+                    );
                 }
             }
 
-            if (failedUploads.length > 0) {
-                toast.error(`${failedUploads.length} source file${failedUploads.length === 1 ? "" : "s"} could not be processed.`);
-                return;
+            const hasFailures = failedUploads.length > 0;
+            if (hasFailures) {
+                toast.warning(
+                    uploadedSourceIds.length > 0
+                        ? `${uploadedSourceIds.length} source${uploadedSourceIds.length === 1 ? "" : "s"} created; ${failedUploads.length} failed.`
+                        : `${failedUploads.length} source file${failedUploads.length === 1 ? "" : "s"} could not be processed.`,
+                );
+                if (uploadedSourceIds.length === 0) return;
             }
 
-            toast.success(
-                data.files.length === 1
-                    ? "Knowledge source is ready."
-                    : `${data.files.length} knowledge sources are ready.`,
-            );
+            if (!hasFailures) {
+                toast.success(
+                    uploadedSourceIds.length === 1
+                        ? "Knowledge source is ready."
+                        : `${uploadedSourceIds.length} knowledge sources are ready.`,
+                );
+            }
             form.reset();
             onUploaded?.();
             router.push(

@@ -4,10 +4,16 @@ import AuthShell from "@/components/auth/AuthShell";
 import SignInForm from "@/components/auth/SignInForm";
 import { getOnboardingStatus } from "@/lib/actions/onboarding.actions";
 
-const SignInPage = async () => {
-    const onboardingStatus = await getOnboardingStatus();
+const SignInPage = async ({
+    searchParams,
+}: {
+    searchParams: Promise<{ redirect_url?: string; redirectUrl?: string }>;
+}) => {
+    const [{ redirect_url, redirectUrl }, onboardingStatus] = await Promise.all([searchParams, getOnboardingStatus()]);
+    const requestedRedirect = redirect_url || redirectUrl;
 
     if (onboardingStatus.authenticated) {
+        if (requestedRedirect?.startsWith("/invite/")) redirect(requestedRedirect);
         redirect(onboardingStatus.completed && onboardingStatus.workspaceSlug ? `/${onboardingStatus.workspaceSlug}` : "/onboarding");
     }
 

@@ -22,6 +22,12 @@ const submitButtonClass =
     "h-[48px] w-full rounded-full bg-[var(--text-primary)] text-[15px] font-semibold text-[var(--text-inverse)] shadow-none hover:bg-[var(--accent-warm-hover)]";
 const backButtonClass =
     "cursor-pointer text-[15px] font-semibold text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text-primary)]";
+const InlineAuthError = ({ message }: { message: string | null }) =>
+    message ? (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm leading-5 text-red-700">
+            {message}
+        </p>
+    ) : null;
 
 const SignInForm = () => {
     const router = useRouter();
@@ -33,8 +39,13 @@ const SignInForm = () => {
     const [samlIdentifier, setSamlIdentifier] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isOAuthSubmitting, setIsOAuthSubmitting] = useState<string | null>(null);
+    const redirectError = searchParams.get("error_description") || searchParams.get("error");
+    const [authError, setAuthError] = useState<string | null>(
+        redirectError ? "Authentication could not be completed. Please try again." : null,
+    );
 
     const showAuthError = (message: string) => {
+        setAuthError(message);
         toast.error(message, { duration: 5000 });
     };
 
@@ -44,11 +55,13 @@ const SignInForm = () => {
         : "/auth/redirect";
 
     const resetToChoices = () => {
+        setAuthError(null);
         setStep("choices");
     };
 
     const handleEmailContinue = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+        setAuthError(null);
         setStep("password");
     };
 
@@ -56,6 +69,7 @@ const SignInForm = () => {
         event.preventDefault();
         if (!isLoaded || !signIn) return;
 
+        setAuthError(null);
         setIsSubmitting(true);
 
         try {
@@ -82,6 +96,7 @@ const SignInForm = () => {
     const handleOAuth = async (strategy: EnabledOAuthStrategy) => {
         if (!isLoaded || !signIn) return;
 
+        setAuthError(null);
         setIsOAuthSubmitting(strategy);
 
         try {
@@ -100,6 +115,7 @@ const SignInForm = () => {
         event.preventDefault();
         if (!isLoaded || !signIn) return;
 
+        setAuthError(null);
         setIsSubmitting(true);
 
         try {
@@ -147,13 +163,17 @@ const SignInForm = () => {
                 <Input
                     type="password"
                     value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    onChange={(event) => {
+                        setPassword(event.target.value);
+                        setAuthError(null);
+                    }}
                     autoComplete="current-password"
                     required
                     autoFocus
                     placeholder="Enter your password..."
                     className={authInputClass}
                 />
+                <InlineAuthError message={authError} />
                 <Button type="submit" className={submitButtonClass} disabled={!isLoaded || isSubmitting}>
                     {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : "Log in"}
                     {!isSubmitting && <ArrowRight className="size-4" />}
@@ -172,13 +192,17 @@ const SignInForm = () => {
                 <Input
                     type="email"
                     value={samlIdentifier}
-                    onChange={(event) => setSamlIdentifier(event.target.value)}
+                    onChange={(event) => {
+                        setSamlIdentifier(event.target.value);
+                        setAuthError(null);
+                    }}
                     autoComplete="email"
                     required
                     autoFocus
                     placeholder="name@company.com"
                     className={authInputClass}
                 />
+                <InlineAuthError message={authError} />
                 <Button type="submit" className={secondaryButtonClass} disabled={!isLoaded || isSubmitting}>
                     {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : "Continue with SAML SSO"}
                 </Button>
@@ -206,6 +230,7 @@ const SignInForm = () => {
                 {isOAuthSubmitting === GOOGLE_OAUTH_STRATEGY ? <Loader2 className="size-4 animate-spin" /> : <FaGoogle className="size-4" />}
                 Continue with Google
             </Button>
+            <InlineAuthError message={authError} />
             <Button type="button" className={secondaryButtonClass} onClick={() => setStep("email")}>
                 <Mail className="size-4" />
                 Continue with email

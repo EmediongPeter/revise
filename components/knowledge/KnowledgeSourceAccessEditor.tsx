@@ -36,19 +36,23 @@ const KnowledgeSourceAccessEditor = ({
 
     const saveAccess = () => {
         startTransition(async () => {
-            const result = await updateKnowledgeSourceScope({
-                sourceId,
-                scope,
-                teamIds: scope === "teams" ? teamIds : [],
-            });
+            try {
+                const result = await updateKnowledgeSourceScope({
+                    sourceId,
+                    scope,
+                    teamIds: scope === "teams" ? teamIds : [],
+                });
 
-            if (!result.success) {
-                toast.error(result.error);
-                return;
+                if (!result.success) {
+                    toast.error(result.error);
+                    return;
+                }
+
+                toast.success("Source access updated.");
+                router.refresh();
+            } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Source access could not be updated.");
             }
-
-            toast.success("Source access updated.");
-            router.refresh();
         });
     };
 

@@ -94,7 +94,6 @@ const callOpenRouter = async ({
     }
 
     const json = await response.json();
-    console.log("🚀 ~ callOpenRouter ~ json:", json.choices[0].message);
     console.info("[AI Blueprint] openrouter:response", {
         status: response.status,
         structured,

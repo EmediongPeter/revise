@@ -1,22 +1,13 @@
-import { notFound, redirect } from "next/navigation";
 import DashboardPlaceholder from "@/components/DashboardPlaceholder";
-import { getOnboardingStatus } from "@/lib/actions/onboarding.actions";
 import { BarChart3 } from "lucide-react";
+import { assertWorkspacePageAccess } from "@/lib/workspace/page-access";
 
 const WorkspaceReportsPage = async ({
     params,
 }: {
     params: Promise<{ workspaceSlug: string }>;
 }) => {
-    const [{ workspaceSlug }, onboardingStatus] = await Promise.all([params, getOnboardingStatus()]);
-
-    if (!onboardingStatus.completed) {
-        redirect("/onboarding");
-    }
-
-    if (onboardingStatus.workspaceSlug !== workspaceSlug) {
-        notFound();
-    }
+    await assertWorkspacePageAccess(params);
 
     return (
         <DashboardPlaceholder

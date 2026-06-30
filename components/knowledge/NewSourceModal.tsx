@@ -145,6 +145,7 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
     const router = useRouter();
     const [open, setOpen] = useState(false);
     const [resolvedWorkspaceSlug, setResolvedWorkspaceSlug] = useState(workspaceSlug);
+    const [knowledgeUploadPrefix, setKnowledgeUploadPrefix] = useState("");
     const [teams, setTeams] = useState<TeamSummary[]>([]);
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -173,7 +174,6 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
         },
     });
     const title = form.watch("title");
-    const description = form.watch("description");
     const sourceType = form.watch("sourceType");
     const scope = form.watch("scope");
     const selectedTeamIds = form.watch("teamIds");
@@ -182,7 +182,12 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
     const activeType = sourceTypeOptions.find((item) => item.value === sourceType) || sourceTypeOptions[0];
     const activeIcon = sourceIcons.find((item) => item.key === selectedIcon) || sourceIcons[0];
     const ActiveIcon = activeIcon.icon;
-    const uploadReady = origin === "upload" && Boolean(resolvedWorkspaceSlug) && form.formState.isValid && !submitting;
+    const uploadReady =
+        origin === "upload" &&
+        Boolean(resolvedWorkspaceSlug) &&
+        Boolean(knowledgeUploadPrefix) &&
+        form.formState.isValid &&
+        !submitting;
     const previewReady =
         origin === "paste"
             ? title.trim().length >= 2 && pasteText.trim().length > 0
@@ -219,7 +224,7 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
     useEffect(() => {
         let mounted = true;
 
-        if (!open || (resolvedWorkspaceSlug && teams.length > 0)) return;
+        if (!open || (resolvedWorkspaceSlug && teams.length > 0 && knowledgeUploadPrefix)) return;
 
         setLoading(true);
         setError(undefined);
@@ -235,6 +240,7 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
 
                 setResolvedWorkspaceSlug((current) => current || result.data.activeWorkspace.slug);
                 setTeams(result.data.teams);
+                setKnowledgeUploadPrefix(result.data.knowledgeUploadPrefix);
             })
             .catch(() => {
                 if (mounted) setError("Could not load workspace teams.");
@@ -246,7 +252,7 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
         return () => {
             mounted = false;
         };
-    }, [open, resolvedWorkspaceSlug, teams.length]);
+    }, [knowledgeUploadPrefix, open, resolvedWorkspaceSlug, teams.length]);
 
     useEffect(() => {
         if (!open) return;
@@ -344,33 +350,46 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
             const uploadedSourceIds: string[] = [];
 
             for (const file of data.files) {
-                const pathname = `knowledge/${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
-                const blob = await upload(pathname, file, {
-                    access: "public",
-                    handleUploadUrl: "/api/knowledge/upload",
-                    contentType: getUploadContentType(file),
-                });
-                const result = await processUploadedKnowledgeSource({
-                    title: getFileTitle(data.title, file, data.files.length),
-                    description: data.description,
-                    sourceType: data.sourceType,
-                    scope: data.scope,
-                    teamIds: data.scope === "teams" ? data.teamIds : [],
-                    file,
-                    fileUrl: blob.url,
-                    fileBlobKey: blob.pathname,
-                });
+                try {
+                    const pathname = `${knowledgeUploadPrefix}${crypto.randomUUID()}-${file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
+                    const contentType = getUploadContentType(file);
+                    const blob = await upload(pathname, file, {
+                        access: "private",
+                        handleUploadUrl: "/api/knowledge/upload",
+                        contentType,
+                    });
+                    const result = await processUploadedKnowledgeSource({
+                        title: getFileTitle(data.title, file, data.files.length),
+                        description: data.description,
+                        sourceType: data.sourceType,
+                        scope: data.scope,
+                        teamIds: data.scope === "teams" ? data.teamIds : [],
+                        fileName: file.name,
+                        mimeType: contentType,
+                        fileSize: file.size,
+                        fileUrl: blob.url,
+                        fileBlobKey: blob.pathname,
+                    });
 
-                if (!result.success) {
-                    failedUploads.push(`${file.name}: ${result.error}`);
-                } else {
-                    uploadedSourceIds.push(result.data._id);
+                    if (!result.success) {
+                        failedUploads.push(`${file.name}: ${result.error}`);
+                    } else {
+                        uploadedSourceIds.push(result.data._id);
+                    }
+                } catch (error) {
+                    failedUploads.push(
+                        `${file.name}: ${error instanceof Error ? error.message : "Upload failed."}`,
+                    );
                 }
             }
 
             if (failedUploads.length > 0) {
-                toast.error(`${failedUploads.length} source file${failedUploads.length === 1 ? "" : "s"} could not be processed.`);
-                return;
+                toast.warning(
+                    uploadedSourceIds.length > 0
+                        ? `${uploadedSourceIds.length} source${uploadedSourceIds.length === 1 ? "" : "s"} created; ${failedUploads.length} failed.`
+                        : `${failedUploads.length} source file${failedUploads.length === 1 ? "" : "s"} could not be processed.`,
+                );
+                if (uploadedSourceIds.length === 0) return;
             }
 
             const nextHref = uploadedSourceIds.length === 1
@@ -384,7 +403,10 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
 
                 if (!blueprintResult.success) {
                     toast.error(blueprintResult.error);
+                    setOpen(false);
+                    resetModal();
                     router.push(nextHref);
+                    router.refresh();
                     return;
                 }
 
@@ -409,14 +431,19 @@ const NewSourceModal = ({ workspaceSlug }: { workspaceSlug?: string }) => {
                 return;
             }
 
-            toast.success(data.files.length === 1 ? "Source created" : "Sources created", {
-                description: data.files.length === 1 ? getFileTitle(data.title, data.files[0], data.files.length) : `${data.files.length} sources uploaded`,
-                duration: 12000,
-                action: {
-                    label: uploadedSourceIds.length === 1 ? "View source" : "View sources",
-                    onClick: () => router.push(nextHref),
-                },
-            });
+            if (failedUploads.length === 0) {
+                toast.success(uploadedSourceIds.length === 1 ? "Source created" : "Sources created", {
+                    description:
+                        uploadedSourceIds.length === 1
+                            ? getFileTitle(data.title, data.files[0], data.files.length)
+                            : `${uploadedSourceIds.length} sources uploaded`,
+                    duration: 12000,
+                    action: {
+                        label: uploadedSourceIds.length === 1 ? "View source" : "View sources",
+                        onClick: () => router.push(nextHref),
+                    },
+                });
+            }
             setOpen(false);
             resetModal();
             router.push(nextHref);

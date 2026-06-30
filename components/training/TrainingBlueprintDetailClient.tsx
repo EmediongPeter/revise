@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Dialog } from "radix-ui";
 import { toast } from "sonner";
 import {
     ArrowDown,
@@ -20,9 +21,12 @@ import {
     Edit3,
     FileText,
     Headphones,
+    Loader2,
     PanelRightClose,
     PanelRightOpen,
     PackageCheck,
+    RotateCcw,
+    Search,
     ShieldCheck,
     Sparkles,
     Star,
@@ -34,11 +38,18 @@ import {
 import AssignTrainingPlanModal from "@/components/training/AssignTrainingPlanModal";
 import EditableBlueprintSection from "@/components/training/EditableBlueprintSection";
 import {
+    TrainingBlueprintIcon,
+    trainingEmojiOptions,
+    trainingIconColors,
+    trainingIconOptions,
+} from "@/components/training/TrainingBlueprintIcon";
+import {
     regenerateTrainingPlan,
     updateTrainingPlanProperties,
     updateTrainingPlanSources,
     updateTrainingPlanStatus,
     type TrainingPlanDetail,
+    type TrainingBlueprintRegenerationField,
 } from "@/lib/actions/training.actions";
 import type { TrainingPlanGoal, TrainingPlanStatus } from "@/types";
 
@@ -113,6 +124,40 @@ const sourceTypeLabels: Record<string, string> = {
     "knowledge-base": "Knowledge base",
     other: "Other",
 };
+
+const TRAINING_PROPERTIES_OPEN_KEY = "revise.training.propertiesPanel.open";
+const TRAINING_PROPERTIES_CHANGE_EVENT = "revise:training-properties-change";
+
+const getPropertiesOpenSnapshot = () => {
+    try {
+        return window.localStorage.getItem(TRAINING_PROPERTIES_OPEN_KEY) !== "false";
+    } catch {
+        return true;
+    }
+};
+
+const subscribeToPropertiesOpen = (onStoreChange: () => void) => {
+    window.addEventListener("storage", onStoreChange);
+    window.addEventListener(TRAINING_PROPERTIES_CHANGE_EVENT, onStoreChange);
+
+    return () => {
+        window.removeEventListener("storage", onStoreChange);
+        window.removeEventListener(TRAINING_PROPERTIES_CHANGE_EVENT, onStoreChange);
+    };
+};
+
+const regenerationSectionOptions: Array<{ field: TrainingBlueprintRegenerationField; label: string }> = [
+    { field: "objective", label: "Objective" },
+    { field: "keyTopics", label: "Key topics" },
+    { field: "requiredKnowledge", label: "Required knowledge" },
+    { field: "practiceScenarios", label: "Practice scenarios" },
+    { field: "assessmentCriteria", label: "Assessment criteria" },
+    { field: "rolePlayPrompts", label: "Roleplay prompts" },
+    { field: "assessmentQuestions", label: "Assessment questions" },
+    { field: "commonMistakes", label: "Common mistakes" },
+    { field: "recommendedAssignments", label: "Recommended assignments" },
+    { field: "missingSections", label: "Missing sections" },
+];
 
 const formatDate = (value?: string) => {
     if (!value) return "-";
@@ -297,26 +342,28 @@ const HeaderTextEditor = ({
     planId,
     title,
     description,
+    iconKey,
+    iconColor,
     onDraftChange,
 }: {
     planId: string;
     title: string;
     description?: string;
+    iconKey?: string;
+    iconColor?: string;
     onDraftChange: (draft: { title: string; description: string }) => void;
 }) => {
     const [editing, setEditing] = useState<"title" | "description" | null>(null);
     const [draftTitle, setDraftTitle] = useState(title);
     const [draftDescription, setDraftDescription] = useState(description || "");
+    const [draftIconKey, setDraftIconKey] = useState(iconKey || "clipboard");
+    const [draftIconColor, setDraftIconColor] = useState(iconColor || trainingIconColors[0]);
+    const [iconPickerOpen, setIconPickerOpen] = useState(false);
+    const [iconTab, setIconTab] = useState<"icons" | "emojis">("icons");
     const [isPending, startTransition] = useTransition();
     const titleRef = useRef<HTMLTextAreaElement>(null);
     const descriptionRef = useRef<HTMLTextAreaElement>(null);
     const savedRef = useRef({ title, description: description || "" });
-
-    useEffect(() => {
-        setDraftTitle(title);
-        setDraftDescription(description || "");
-        savedRef.current = { title, description: description || "" };
-    }, [title, description]);
 
     useEffect(() => {
         const activeRef = editing === "title" ? titleRef : editing === "description" ? descriptionRef : null;
@@ -324,7 +371,7 @@ const HeaderTextEditor = ({
         activeRef?.current?.setSelectionRange(activeRef.current.value.length, activeRef.current.value.length);
     }, [editing]);
 
-    const persist = (nextTitle = draftTitle, nextDescription = draftDescription) => {
+    const persist = useCallback((nextTitle = draftTitle, nextDescription = draftDescription) => {
         const trimmedTitle = nextTitle.trim();
         const normalizedDescription = nextDescription.trim();
 
@@ -350,6 +397,23 @@ const HeaderTextEditor = ({
                 return;
             }
         });
+    }, [description, draftDescription, draftTitle, planId, title]);
+
+    const persistIcon = (nextIconKey = draftIconKey, nextIconColor = draftIconColor) => {
+        setDraftIconKey(nextIconKey);
+        setDraftIconColor(nextIconColor);
+
+        startTransition(async () => {
+            const result = await updateTrainingPlanProperties({
+                planId,
+                iconKey: nextIconKey,
+                iconColor: nextIconColor,
+            });
+
+            if (!result.success) {
+                toast.error(result.error);
+            }
+        });
     };
 
     useEffect(() => {
@@ -358,12 +422,106 @@ const HeaderTextEditor = ({
         const timeout = window.setTimeout(() => persist(), 750);
 
         return () => window.clearTimeout(timeout);
-    }, [draftTitle, draftDescription, editing]);
+    }, [draftTitle, draftDescription, editing, persist]);
 
     return (
         <div className={`group/title mb-6 ${isPending ? "opacity-95" : ""}`}>
-            <div className="mb-4 flex size-10 items-center justify-center rounded-xl bg-[var(--bg-secondary)] text-[var(--text-muted)]">
-                <ClipboardCheck className="size-5" />
+            <div className="relative mb-4 inline-flex">
+                <button
+                    type="button"
+                    onClick={() => setIconPickerOpen((current) => !current)}
+                    className="flex size-10 items-center justify-center rounded-xl bg-[var(--bg-secondary)] text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)]"
+                    style={{ color: draftIconColor }}
+                >
+                    <TrainingBlueprintIcon iconKey={draftIconKey} iconColor={draftIconColor} className="size-5" />
+                    <span className="sr-only">Change module icon</span>
+                </button>
+                <div
+                    className={`absolute left-0 top-full z-[260] mt-2 w-[min(23rem,calc(100vw-3rem))] origin-top rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[0_18px_48px_rgba(15,23,42,0.18)] transition-[opacity,transform,visibility] duration-200 ${
+                        iconPickerOpen ? "visible translate-y-0 scale-100 opacity-100" : "invisible -translate-y-1 scale-[0.98] opacity-0"
+                    }`}
+                >
+                    <div className="flex border-b border-[var(--border-subtle)] px-3 pt-3">
+                        {(["icons", "emojis"] as const).map((tab) => (
+                            <button
+                                key={tab}
+                                type="button"
+                                onClick={() => setIconTab(tab)}
+                                className={`border-b-2 px-3 pb-2 text-sm font-semibold capitalize transition ${
+                                    iconTab === tab
+                                        ? "border-[#6366f1] text-[var(--text-primary)]"
+                                        : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                                }`}
+                            >
+                                {tab}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="border-b border-[var(--border-subtle)] px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                            {trainingIconColors.map((color) => (
+                                <button
+                                    key={color}
+                                    type="button"
+                                    onClick={() => persistIcon(draftIconKey, color)}
+                                    className={`flex size-7 items-center justify-center rounded-full ring-offset-2 ring-offset-[var(--surface-elevated)] transition ${draftIconColor === color ? "ring-2 ring-[var(--text-primary)]" : ""}`}
+                                    style={{ backgroundColor: color }}
+                                >
+                                    {draftIconColor === color && <Check className="size-3.5 text-white" />}
+                                    <span className="sr-only">Use color {color}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto p-3 [scrollbar-width:thin] [scrollbar-color:var(--border-medium)_transparent]">
+                        {iconTab === "icons" ? (
+                            <div className="grid grid-cols-7 gap-1.5">
+                                {trainingIconOptions.map((option) => (
+                                    <button
+                                        key={option.key}
+                                        type="button"
+                                        onClick={() => {
+                                            persistIcon(option.key, draftIconColor);
+                                            setIconPickerOpen(false);
+                                        }}
+                                        className={`flex size-9 items-center justify-center rounded-lg transition ${
+                                            draftIconKey === option.key
+                                                ? "bg-[#d97757]/10"
+                                                : "hover:bg-[var(--surface-hover)]"
+                                        }`}
+                                        title={option.label}
+                                    >
+                                        <TrainingBlueprintIcon iconKey={option.key} iconColor={draftIconColor} className="size-4" />
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-6 gap-1.5">
+                                {trainingEmojiOptions.map((emoji) => {
+                                    const key = `emoji:${emoji}`;
+
+                                    return (
+                                        <button
+                                            key={key}
+                                            type="button"
+                                            onClick={() => {
+                                                persistIcon(key, draftIconColor);
+                                                setIconPickerOpen(false);
+                                            }}
+                                            className={`flex size-9 items-center justify-center rounded-lg text-lg transition ${
+                                                draftIconKey === key
+                                                    ? "bg-[#d97757]/10"
+                                                    : "hover:bg-[var(--surface-hover)]"
+                                            }`}
+                                        >
+                                            {emoji}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
 
             {editing === "title" ? (
@@ -438,6 +596,410 @@ const HeaderTextEditor = ({
     );
 };
 
+const RegenerateDraftModal = ({
+    open,
+    defaultMode,
+    selectedSection,
+    sectionDropdownOpen,
+    feedback,
+    sourceChanged,
+    isPending,
+    onClose,
+    onModeChange,
+    onSectionChange,
+    onSectionDropdownOpenChange,
+    onFeedbackChange,
+    onSubmit,
+}: {
+    open: boolean;
+    defaultMode: "full" | "section";
+    selectedSection: TrainingBlueprintRegenerationField;
+    sectionDropdownOpen: boolean;
+    feedback: string;
+    sourceChanged: boolean;
+    isPending: boolean;
+    onClose: () => void;
+    onModeChange: (mode: "full" | "section") => void;
+    onSectionChange: (field: TrainingBlueprintRegenerationField) => void;
+    onSectionDropdownOpenChange: (open: boolean) => void;
+    onFeedbackChange: (value: string) => void;
+    onSubmit: () => void;
+}) => {
+    const selectedSectionOption = regenerationSectionOptions.find((option) => option.field === selectedSection) || regenerationSectionOptions[0];
+    const feedbackRef = useRef<HTMLTextAreaElement>(null);
+
+    if (!open) return null;
+
+    return (
+        <Dialog.Root
+            open={open}
+            onOpenChange={(nextOpen) => {
+                if (!nextOpen && !isPending) onClose();
+            }}
+        >
+            <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 z-[500] bg-black/35 backdrop-blur-[2px]" />
+                <Dialog.Content
+                    className="fixed left-1/2 top-1/2 z-[501] flex max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-visible rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault();
+                        feedbackRef.current?.focus();
+                    }}
+                    onEscapeKeyDown={(event) => {
+                        if (isPending) event.preventDefault();
+                    }}
+                    onPointerDownOutside={(event) => {
+                        if (isPending) event.preventDefault();
+                    }}
+                >
+                <header className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] px-6 py-5">
+                    <div>
+                        <div className="mb-3 flex size-10 items-center justify-center rounded-xl bg-[var(--bg-secondary)] text-[#d97757]">
+                            <RotateCcw className="size-5" />
+                        </div>
+                        <Dialog.Title className="text-lg font-semibold text-[var(--text-primary)]">Regenerate draft</Dialog.Title>
+                        <Dialog.Description className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+                            Refresh the whole training module or target one section with specific feedback.
+                        </Dialog.Description>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={isPending}
+                        className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)] disabled:opacity-40"
+                    >
+                        <X className="size-4" />
+                        <span className="sr-only">Close</span>
+                    </button>
+                </header>
+
+                <div className="min-h-0 overflow-visible px-6 py-5">
+                    {sourceChanged && (
+                        <div className="mb-4 rounded-xl border border-amber-200/70 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
+                            Linked sources changed. Regenerating the entire draft will rebuild it from the current sources.
+                        </div>
+                    )}
+
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        {([
+                            ["full", "Entire draft", "Best when the overall plan needs a fresh pass."],
+                            ["section", "One section", "Best when only one part needs a tighter rewrite."],
+                        ] as const).map(([mode, label, helper]) => (
+                            <button
+                                key={mode}
+                                type="button"
+                                onClick={() => onModeChange(mode)}
+                                disabled={isPending}
+                                className={`rounded-xl border px-4 py-3 text-left transition ${
+                                    defaultMode === mode
+                                        ? "border-[#d97757]/60 bg-[#d97757]/10 text-[var(--text-primary)]"
+                                        : "border-[var(--border-subtle)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
+                                }`}
+                            >
+                                <span className="block text-sm font-semibold">{label}</span>
+                                <span className="mt-1 block text-xs leading-5 text-[var(--text-muted)]">{helper}</span>
+                            </button>
+                        ))}
+                    </div>
+
+                    {defaultMode === "section" && (
+                        <div className="mt-4 overflow-visible">
+                            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                                Section
+                            </label>
+                            <div className="relative mt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => onSectionDropdownOpenChange(!sectionDropdownOpen)}
+                                    disabled={isPending}
+                                    className={`flex h-11 w-full items-center justify-between gap-3 rounded-xl border px-3 text-left text-sm font-semibold transition ${
+                                        sectionDropdownOpen
+                                            ? "border-[#d97757]/60 bg-[#d97757]/10 text-[var(--text-primary)]"
+                                            : "border-[var(--border-subtle)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+                                    } disabled:opacity-60`}
+                                >
+                                    <span className="min-w-0 truncate">{selectedSectionOption.label}</span>
+                                    <ChevronRight className={`size-4 shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${sectionDropdownOpen ? "rotate-90" : ""}`} />
+                                </button>
+                                <div
+                                    className={`absolute bottom-full left-0 right-0 z-[540] mb-2 origin-bottom rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.22)] transition-[opacity,transform,visibility] duration-200 ease-out [scrollbar-width:thin] [scrollbar-color:var(--border-medium)_transparent] ${
+                                        sectionDropdownOpen
+                                            ? "visible translate-y-0 scale-100 opacity-100"
+                                            : "invisible translate-y-1 scale-[0.98] opacity-0"
+                                    }`}
+                                >
+                                    <div className="max-h-64 overflow-y-auto pr-1">
+                                        {regenerationSectionOptions.map((option) => (
+                                            <button
+                                                key={option.field}
+                                                type="button"
+                                                onClick={() => {
+                                                    onSectionChange(option.field);
+                                                    onSectionDropdownOpenChange(false);
+                                                }}
+                                                disabled={isPending}
+                                                className={`flex h-9 w-full items-center justify-between gap-3 rounded-lg px-2.5 text-left text-sm font-medium transition ${
+                                                    selectedSection === option.field
+                                                        ? "bg-[#d97757]/10 text-[var(--text-primary)]"
+                                                        : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+                                                }`}
+                                            >
+                                                <span className="min-w-0 truncate">{option.label}</span>
+                                                {selectedSection === option.field && <Check className="size-4 shrink-0 text-[#d97757]" />}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="mt-4">
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                            Feedback
+                        </label>
+                        <textarea
+                            ref={feedbackRef}
+                            value={feedback}
+                            onChange={(event) => onFeedbackChange(event.target.value)}
+                            placeholder="Tell AI what should change..."
+                            disabled={isPending}
+                            className="mt-2 min-h-28 w-full resize-none rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-2 text-sm leading-6 text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--border-medium)] disabled:opacity-60"
+                        />
+                    </div>
+                </div>
+
+                <footer className="flex items-center justify-end gap-2 border-t border-[var(--border-subtle)] px-6 py-4">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={isPending}
+                        className="inline-flex h-9 items-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)] disabled:opacity-40"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onSubmit}
+                        disabled={isPending}
+                        className="inline-flex h-9 items-center gap-2 rounded-full bg-[#d97757] px-4 text-sm font-semibold text-white transition hover:bg-[#c96849] disabled:opacity-50"
+                    >
+                        {isPending ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
+                        {isPending ? "Regenerating" : defaultMode === "section" ? "Regenerate section" : "Regenerate draft"}
+                    </button>
+                </footer>
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
+    );
+};
+
+const SourceSelectionModal = ({
+    open,
+    sources,
+    linkedSourceIds,
+    selectedSourceIds,
+    planTeamIds,
+    search,
+    tab,
+    isPending,
+    onClose,
+    onSearchChange,
+    onTabChange,
+    onToggleSource,
+    onSave,
+}: {
+    open: boolean;
+    sources: TrainingPlanDetail["availableSources"];
+    linkedSourceIds: string[];
+    selectedSourceIds: string[];
+    planTeamIds: string[];
+    search: string;
+    tab: "recommended" | "all";
+    isPending: boolean;
+    onClose: () => void;
+    onSearchChange: (value: string) => void;
+    onTabChange: (tab: "recommended" | "all") => void;
+    onToggleSource: (sourceId: string) => void;
+    onSave: () => void;
+}) => {
+    const recommendedSources = useMemo(() => {
+        if (planTeamIds.length === 0) return sources;
+
+        return sources.filter((source) => {
+            if (source.scope !== "teams") return true;
+            const sourceTeamIds = source.teamIds || [];
+            return sourceTeamIds.some((teamId) => planTeamIds.includes(teamId));
+        });
+    }, [planTeamIds, sources]);
+    const visibleBase = tab === "recommended" ? recommendedSources : sources;
+    const normalizedSearch = search.trim().toLowerCase();
+    const visibleSources = visibleBase.filter((source) => {
+        if (!normalizedSearch) return true;
+        return [source.title, source.description, source.sourceType]
+            .filter(Boolean)
+            .some((value) => value?.toLowerCase().includes(normalizedSearch));
+    });
+    const searchInputRef = useRef<HTMLInputElement>(null);
+
+    if (!open) return null;
+
+    return (
+        <Dialog.Root
+            open={open}
+            onOpenChange={(nextOpen) => {
+                if (!nextOpen && !isPending) onClose();
+            }}
+        >
+            <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 z-[500] bg-black/35 backdrop-blur-[2px]" />
+                <Dialog.Content
+                    className="fixed left-1/2 top-1/2 z-[501] flex max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault();
+                        searchInputRef.current?.focus();
+                    }}
+                    onEscapeKeyDown={(event) => {
+                        if (isPending) event.preventDefault();
+                    }}
+                    onPointerDownOutside={(event) => {
+                        if (isPending) event.preventDefault();
+                    }}
+                >
+                <header className="border-b border-[var(--border-subtle)] px-6 py-5">
+                    <div className="flex items-start justify-between gap-4">
+                        <div>
+                            <div className="mb-3 flex size-10 items-center justify-center rounded-xl bg-[var(--bg-secondary)] text-[#d97757]">
+                                <BookOpenCheck className="size-5" />
+                            </div>
+                            <Dialog.Title className="text-lg font-semibold text-[var(--text-primary)]">Add sources</Dialog.Title>
+                            <Dialog.Description className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+                                Attach ready knowledge sources to this training module.
+                            </Dialog.Description>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isPending}
+                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)] disabled:opacity-40"
+                        >
+                            <X className="size-4" />
+                            <span className="sr-only">Close</span>
+                        </button>
+                    </div>
+                    <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3">
+                            <Search className="size-4 shrink-0 text-[var(--text-muted)]" />
+                            <input
+                                ref={searchInputRef}
+                                value={search}
+                                onChange={(event) => onSearchChange(event.target.value)}
+                                placeholder="Search sources..."
+                                className="h-full min-w-0 flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+                            />
+                        </div>
+                        <div className="inline-flex h-10 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-1">
+                            {([
+                                ["recommended", "Recommended", recommendedSources.length],
+                                ["all", "All workspace", sources.length],
+                            ] as const).map(([value, label, count]) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => onTabChange(value)}
+                                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition ${
+                                        tab === value
+                                            ? "bg-[var(--surface-elevated)] text-[var(--text-primary)] shadow-sm"
+                                            : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                                    }`}
+                                >
+                                    {label}
+                                    <span className="text-[10px] text-[var(--text-muted)]">{count}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </header>
+
+                <div className="min-h-0 overflow-y-auto px-6 py-4 [scrollbar-width:thin] [scrollbar-color:var(--border-medium)_transparent]">
+                    <div className="space-y-2">
+                        {visibleSources.map((source) => {
+                            const selected = selectedSourceIds.includes(source._id);
+                            const linked = linkedSourceIds.includes(source._id);
+
+                            return (
+                                <button
+                                    key={source._id}
+                                    type="button"
+                                    onClick={() => onToggleSource(source._id)}
+                                    className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${
+                                        selected
+                                            ? "border-[#d97757]/60 bg-[#d97757]/10"
+                                            : "border-[var(--border-subtle)] bg-[var(--bg-secondary)] hover:bg-[var(--surface-hover)]"
+                                    }`}
+                                >
+                                    <span className={`inline-flex size-5 shrink-0 items-center justify-center rounded border ${selected ? "border-[#d97757] bg-[#d97757] text-white" : "border-[var(--border-subtle)] text-transparent"}`}>
+                                        <Check className="size-3.5" />
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-sm font-semibold text-[var(--text-primary)]">{source.title}</span>
+                                        <span className="mt-1 block truncate text-xs text-[var(--text-muted)]">
+                                            {sourceTypeLabels[source.sourceType] || source.sourceType} - v{source.version}
+                                        </span>
+                                    </span>
+                                    <span className="flex shrink-0 items-center gap-2">
+                                        {linked && (
+                                            <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
+                                                linked
+                                            </span>
+                                        )}
+                                        <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-2 py-0.5 text-[10px] font-semibold capitalize text-[var(--text-muted)]">
+                                            {source.scope === "teams" ? "team" : "workspace"}
+                                        </span>
+                                    </span>
+                                </button>
+                            );
+                        })}
+                        {visibleSources.length === 0 && (
+                            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-4 py-8 text-center">
+                                <p className="text-sm font-semibold text-[var(--text-primary)]">No sources found</p>
+                                <p className="mt-1 text-sm text-[var(--text-muted)]">
+                                    Try another search or switch to all workspace sources.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <footer className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] px-6 py-4">
+                    <p className="text-xs font-medium text-[var(--text-muted)]">
+                        {selectedSourceIds.length} selected
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isPending}
+                            className="inline-flex h-9 items-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)] disabled:opacity-40"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onSave}
+                            disabled={isPending || selectedSourceIds.length === 0}
+                            className="inline-flex h-9 items-center rounded-full bg-[#d97757] px-4 text-sm font-semibold text-white transition hover:bg-[#c96849] disabled:opacity-50"
+                        >
+                            Save sources
+                        </button>
+                    </div>
+                </footer>
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
+    );
+};
+
 const TrainingBlueprintDetailClient = ({
     plan,
     workspaceSlug,
@@ -446,11 +1008,21 @@ const TrainingBlueprintDetailClient = ({
     workspaceSlug: string;
 }) => {
     const router = useRouter();
-    const [propertiesOpen, setPropertiesOpen] = useState(true);
+    const propertiesOpen = useSyncExternalStore(
+        subscribeToPropertiesOpen,
+        getPropertiesOpenSnapshot,
+        () => true,
+    );
     const [favorite, setFavorite] = useState(false);
     const [activeMenu, setActiveMenu] = useState<ActiveMenu | null>(null);
-    const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
+    const [sourceModalOpen, setSourceModalOpen] = useState(false);
+    const [sourceSearch, setSourceSearch] = useState("");
+    const [sourceTab, setSourceTab] = useState<"recommended" | "all">("recommended");
     const [selectedSourceIds, setSelectedSourceIds] = useState(plan.sourceIds);
+    const [regenerationOpen, setRegenerationOpen] = useState(false);
+    const [regenerationMode, setRegenerationMode] = useState<"full" | "section">("full");
+    const [regenerationSection, setRegenerationSection] = useState<TrainingBlueprintRegenerationField>("objective");
+    const [sectionDropdownOpen, setSectionDropdownOpen] = useState(false);
     const [regenerationFeedback, setRegenerationFeedback] = useState("");
     const [headerDraft, setHeaderDraft] = useState({
         title: plan.title,
@@ -458,13 +1030,18 @@ const TrainingBlueprintDetailClient = ({
     });
     const [isPending, startTransition] = useTransition();
 
-    useEffect(() => {
-        setHeaderDraft({ title: plan.title, description: plan.description || "" });
-    }, [plan.title, plan.description]);
+    const setStoredPropertiesOpen = useCallback((value: boolean | ((current: boolean) => boolean)) => {
+        const current = getPropertiesOpenSnapshot();
+        const next = typeof value === "function" ? value(current) : value;
 
-    useEffect(() => {
-        setSelectedSourceIds(plan.sourceIds);
-    }, [plan.sourceIds]);
+        try {
+            window.localStorage.setItem(TRAINING_PROPERTIES_OPEN_KEY, String(next));
+        } catch {
+            // Keep the in-memory default when storage is unavailable.
+        }
+
+        window.dispatchEvent(new Event(TRAINING_PROPERTIES_CHANGE_EVENT));
+    }, []);
 
     const teamLabel = useMemo(() => {
         if (plan.teams.length === 0) return "General";
@@ -549,7 +1126,9 @@ const TrainingBlueprintDetailClient = ({
             }
 
             toast.success("Sources updated. Review regeneration next.");
-            setSourcePickerOpen(false);
+            setSourceModalOpen(false);
+            setSourceSearch("");
+            setSourceTab("recommended");
             router.refresh();
         });
     };
@@ -560,11 +1139,32 @@ const TrainingBlueprintDetailClient = ({
         saveSourceSelection(nextSourceIds);
     };
 
+    const openRegenerationModal = (
+        mode: "full" | "section" = "full",
+        sectionField: TrainingBlueprintRegenerationField = "objective",
+    ) => {
+        setRegenerationMode(mode);
+        setRegenerationSection(sectionField);
+        setSectionDropdownOpen(false);
+        setRegenerationOpen(true);
+    };
+
+    const closeRegenerationModal = () => {
+        setSectionDropdownOpen(false);
+        setRegenerationOpen(false);
+    };
+
+    const updateRegenerationMode = (mode: "full" | "section") => {
+        setSectionDropdownOpen(false);
+        setRegenerationMode(mode);
+    };
+
     const regenerateDraft = () => {
         startTransition(async () => {
             const result = await regenerateTrainingPlan({
                 planId: plan._id,
                 feedback: regenerationFeedback,
+                sectionField: regenerationMode === "section" ? regenerationSection : undefined,
             });
 
             if (!result.success) {
@@ -572,8 +1172,15 @@ const TrainingBlueprintDetailClient = ({
                 return;
             }
 
-            toast.success(result.data.generationStatus === "queued" ? "Regeneration queued." : "Draft regenerated.");
+            toast.success(
+                result.data.generationStatus === "queued"
+                    ? "Regeneration needs a larger background pass."
+                    : regenerationMode === "section"
+                      ? "Section regenerated."
+                      : "Draft regenerated.",
+            );
             setRegenerationFeedback("");
+            closeRegenerationModal();
             router.refresh();
         });
     };
@@ -600,14 +1207,14 @@ const TrainingBlueprintDetailClient = ({
 
             if (event.key.toLowerCase() === "p") {
                 event.preventDefault();
-                setPropertiesOpen((current) => !current);
+                setStoredPropertiesOpen((current) => !current);
             }
         };
 
         window.addEventListener("keydown", onKeyDown);
 
         return () => window.removeEventListener("keydown", onKeyDown);
-    }, [nextHref, previousHref, router]);
+    }, [nextHref, previousHref, router, setStoredPropertiesOpen]);
 
     const renderStatusMenu = (align: "header" | "property" = "header") => (
         <MenuShell align={align}>
@@ -710,6 +1317,8 @@ const TrainingBlueprintDetailClient = ({
         <MenuShell align={align}>
             <div className="p-1.5">
                 <AssignTrainingPlanModal
+                    planId={plan._id}
+                    workspaceSlug={workspaceSlug}
                     teams={plan.teams}
                     members={plan.members}
                     compact
@@ -721,17 +1330,47 @@ const TrainingBlueprintDetailClient = ({
     return (
         <main className="h-full w-full overflow-hidden">
             {activeMenu && <button type="button" aria-label="Close menu" onClick={closeMenus} className="fixed inset-0 z-[40] cursor-default" />}
+            <RegenerateDraftModal
+                open={regenerationOpen}
+                defaultMode={regenerationMode}
+                selectedSection={regenerationSection}
+                sectionDropdownOpen={sectionDropdownOpen}
+                feedback={regenerationFeedback}
+                sourceChanged={sourceNeedsRegeneration}
+                isPending={isPending}
+                onClose={closeRegenerationModal}
+                onModeChange={updateRegenerationMode}
+                onSectionChange={setRegenerationSection}
+                onSectionDropdownOpenChange={setSectionDropdownOpen}
+                onFeedbackChange={setRegenerationFeedback}
+                onSubmit={regenerateDraft}
+            />
+            <SourceSelectionModal
+                open={sourceModalOpen}
+                sources={plan.availableSources}
+                linkedSourceIds={plan.sourceIds}
+                selectedSourceIds={selectedSourceIds}
+                planTeamIds={selectedTeamIds}
+                search={sourceSearch}
+                tab={sourceTab}
+                isPending={isPending}
+                onClose={() => setSourceModalOpen(false)}
+                onSearchChange={setSourceSearch}
+                onTabChange={setSourceTab}
+                onToggleSource={toggleSelectedSource}
+                onSave={() => saveSourceSelection()}
+            />
             <div className="flex h-[calc(100vh-1rem)] flex-col overflow-hidden bg-transparent">
                 <header className="relative z-[80] shrink-0 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)]">
                     <div className="flex h-12 items-center justify-between gap-3 px-5">
-                        <nav className="flex min-w-0 items-center gap-2 text-sm font-medium text-[var(--text-muted)]">
-                            <Link href={`/${workspaceSlug}/modules`} className="transition hover:text-[var(--text-primary)]">
+                        <nav className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden whitespace-nowrap text-sm font-medium text-[var(--text-muted)]">
+                            <Link href={`/${workspaceSlug}/modules`} className="shrink-0 transition hover:text-[var(--text-primary)]">
                                 Training modules
                             </Link>
                             <ChevronRight className="size-4 shrink-0" />
-                            <span className="truncate">{teamLabel}</span>
+                            <span className="shrink-0">{teamLabel}</span>
                             <ChevronRight className="size-4 shrink-0" />
-                            <span className="max-w-[34rem] truncate text-[var(--text-primary)]">{headerDraft.title}</span>
+                            <span className="min-w-0 flex-1 truncate text-[var(--text-primary)]">{headerDraft.title}</span>
                         </nav>
                         <div className="flex shrink-0 items-center gap-1.5">
                             <button
@@ -806,7 +1445,7 @@ const TrainingBlueprintDetailClient = ({
                         <Hint label="Toggle properties (P)" disabled={!!activeMenu}>
                             <button
                                 type="button"
-                                onClick={() => setPropertiesOpen((current) => !current)}
+                                onClick={() => setStoredPropertiesOpen((current) => !current)}
                                 className="inline-flex size-8 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                             >
                                 {propertiesOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
@@ -827,8 +1466,22 @@ const TrainingBlueprintDetailClient = ({
                                 planId={plan._id}
                                 title={plan.title}
                                 description={plan.description}
+                                iconKey={plan.iconKey}
+                                iconColor={plan.iconColor}
                                 onDraftChange={setHeaderDraft}
                             />
+
+                            <div className="mb-5 flex items-center justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => openRegenerationModal(sourceNeedsRegeneration ? "full" : "section")}
+                                    disabled={isPending}
+                                    className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold text-[var(--text-secondary)] shadow-[var(--shadow-soft-sm)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                                >
+                                    {isPending ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
+                                    Regenerate
+                                </button>
+                            </div>
 
                             <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-[var(--text-secondary)]">
                                 <span className="flex items-center gap-2">
@@ -856,19 +1509,13 @@ const TrainingBlueprintDetailClient = ({
                                         </div>
                                         <button
                                             type="button"
-                                            onClick={regenerateDraft}
+                                            onClick={() => openRegenerationModal("full")}
                                             disabled={isPending}
                                             className="inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-[#d97757] px-3 text-xs font-semibold text-white transition hover:bg-[#c76647] disabled:opacity-50"
                                         >
-                                            Regenerate draft
+                                            Review regeneration
                                         </button>
                                     </div>
-                                    <textarea
-                                        value={regenerationFeedback}
-                                        onChange={(event) => setRegenerationFeedback(event.target.value)}
-                                        placeholder="Optional feedback for AI..."
-                                        className="mt-3 min-h-16 w-full resize-none rounded-lg border border-amber-200/80 bg-white/70 px-3 py-2 text-xs text-amber-950 outline-none transition placeholder:text-amber-800/45 focus:border-amber-300 dark:border-amber-200/15 dark:bg-black/15 dark:text-amber-50 dark:placeholder:text-amber-100/35"
-                                    />
                                 </div>
                             )}
 
@@ -877,63 +1524,17 @@ const TrainingBlueprintDetailClient = ({
                                     <h2 className="text-sm font-semibold text-[var(--text-primary)]">Sources</h2>
                                     <button
                                         type="button"
-                                        onClick={() => setSourcePickerOpen((current) => !current)}
-                                        className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition ${
-                                            sourcePickerOpen
-                                                ? "border-[var(--border-medium)] bg-[var(--surface-hover)] text-[var(--text-primary)]"
-                                                : "border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
-                                        }`}
+                                        onClick={() => {
+                                            setSelectedSourceIds(plan.sourceIds);
+                                            setSourceSearch("");
+                                            setSourceTab("recommended");
+                                            setSourceModalOpen(true);
+                                        }}
+                                        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                                     >
                                         + Add source
                                     </button>
                                 </div>
-                                {sourcePickerOpen && (
-                                    <div className="border-b border-[var(--border-subtle)] bg-[var(--bg-primary)] px-4 py-3">
-                                        <div className="mb-2 flex items-center justify-between gap-3">
-                                            <p className="text-xs font-semibold text-[var(--text-primary)]">Ready workspace sources</p>
-                                            <button
-                                                type="button"
-                                                onClick={() => saveSourceSelection()}
-                                                disabled={isPending || selectedSourceIds.length === 0}
-                                                className="inline-flex h-7 items-center rounded-full bg-[#d97757] px-3 text-xs font-semibold text-white transition hover:bg-[#c76647] disabled:opacity-40"
-                                            >
-                                                Save
-                                            </button>
-                                        </div>
-                                        <div className="max-h-52 space-y-1 overflow-y-auto pr-1 [scrollbar-width:thin] [scrollbar-color:var(--border-medium)_transparent]">
-                                            {plan.availableSources.map((source) => {
-                                                const selected = selectedSourceIds.includes(source._id);
-
-                                                return (
-                                                    <button
-                                                        key={source._id}
-                                                        type="button"
-                                                        onClick={() => toggleSelectedSource(source._id)}
-                                                        className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition hover:bg-[var(--surface-hover)]"
-                                                    >
-                                                        <span className={`inline-flex size-4 shrink-0 items-center justify-center rounded border ${selected ? "border-[#d97757] bg-[#d97757] text-white" : "border-[var(--border-subtle)] text-transparent"}`}>
-                                                            <Check className="size-3" />
-                                                        </span>
-                                                        <span className="min-w-0 flex-1">
-                                                            <span className="block truncate text-xs font-semibold text-[var(--text-primary)]">{source.title}</span>
-                                                            <span className="block truncate text-[11px] text-[var(--text-muted)]">
-                                                                {sourceTypeLabels[source.sourceType] || source.sourceType} - v{source.version}
-                                                            </span>
-                                                        </span>
-                                                        {plan.sourceIds.includes(source._id) && (
-                                                            <span className="rounded-full bg-[var(--surface-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
-                                                                linked
-                                                            </span>
-                                                        )}
-                                                    </button>
-                                                );
-                                            })}
-                                            {plan.availableSources.length === 0 && (
-                                                <p className="rounded-lg bg-[var(--surface-elevated)] px-3 py-3 text-xs text-[var(--text-muted)]">No ready sources yet.</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
                                 <div className="divide-y divide-[var(--border-subtle)]">
                                     {plan.sources.map((source) => (
                                         <div
@@ -974,22 +1575,22 @@ const TrainingBlueprintDetailClient = ({
                             </section>
 
                             <div className="space-y-4">
-                                <EditableBlueprintSection planId={plan._id} title="Objective" field="objective" value={plan.objective} mode="text" />
+                                <EditableBlueprintSection key={`objective-${plan.objective || ""}`} planId={plan._id} title="Objective" field="objective" value={plan.objective} mode="text" />
                                 {plan.sourceReferenceNotes && (
                                     <p className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-4 text-sm leading-6 text-[var(--text-muted)]">
                                         {plan.sourceReferenceNotes}
                                     </p>
                                 )}
-                                <EditableBlueprintSection planId={plan._id} title="Trainer guidance" field="trainerGuidance" value={plan.trainerGuidance} mode="text" />
-                                <EditableBlueprintSection planId={plan._id} title="Key topics" field="keyTopics" value={plan.keyTopics} />
-                                <EditableBlueprintSection planId={plan._id} title="Required knowledge" field="requiredKnowledge" value={plan.requiredKnowledge} />
-                                <EditableBlueprintSection planId={plan._id} title="Practice scenarios" field="practiceScenarios" value={plan.practiceScenarios} />
-                                <EditableBlueprintSection planId={plan._id} title="Assessment criteria" field="assessmentCriteria" value={plan.assessmentCriteria} />
-                                <EditableBlueprintSection planId={plan._id} title="Roleplay prompts" field="rolePlayPrompts" value={plan.rolePlayPrompts} />
-                                <EditableBlueprintSection planId={plan._id} title="Assessment questions" field="assessmentQuestions" value={plan.assessmentQuestions} />
-                                <EditableBlueprintSection planId={plan._id} title="Common mistakes" field="commonMistakes" value={plan.commonMistakes} />
-                                <EditableBlueprintSection planId={plan._id} title="Recommended assignments" field="recommendedAssignments" value={plan.recommendedAssignments} />
-                                <EditableBlueprintSection planId={plan._id} title="Missing sections" field="missingSections" value={plan.missingSections} />
+                                <EditableBlueprintSection key={`trainerGuidance-${plan.trainerGuidance || ""}`} planId={plan._id} title="Trainer guidance" field="trainerGuidance" value={plan.trainerGuidance} mode="text" />
+                                <EditableBlueprintSection key={`keyTopics-${plan.keyTopics.join("\u001f")}`} planId={plan._id} title="Key topics" field="keyTopics" value={plan.keyTopics} />
+                                <EditableBlueprintSection key={`requiredKnowledge-${plan.requiredKnowledge.join("\u001f")}`} planId={plan._id} title="Required knowledge" field="requiredKnowledge" value={plan.requiredKnowledge} />
+                                <EditableBlueprintSection key={`practiceScenarios-${plan.practiceScenarios.join("\u001f")}`} planId={plan._id} title="Practice scenarios" field="practiceScenarios" value={plan.practiceScenarios} />
+                                <EditableBlueprintSection key={`assessmentCriteria-${plan.assessmentCriteria.join("\u001f")}`} planId={plan._id} title="Assessment criteria" field="assessmentCriteria" value={plan.assessmentCriteria} />
+                                <EditableBlueprintSection key={`rolePlayPrompts-${plan.rolePlayPrompts.join("\u001f")}`} planId={plan._id} title="Roleplay prompts" field="rolePlayPrompts" value={plan.rolePlayPrompts} />
+                                <EditableBlueprintSection key={`assessmentQuestions-${plan.assessmentQuestions.join("\u001f")}`} planId={plan._id} title="Assessment questions" field="assessmentQuestions" value={plan.assessmentQuestions} />
+                                <EditableBlueprintSection key={`commonMistakes-${plan.commonMistakes.join("\u001f")}`} planId={plan._id} title="Common mistakes" field="commonMistakes" value={plan.commonMistakes} />
+                                <EditableBlueprintSection key={`recommendedAssignments-${plan.recommendedAssignments.join("\u001f")}`} planId={plan._id} title="Recommended assignments" field="recommendedAssignments" value={plan.recommendedAssignments} />
+                                <EditableBlueprintSection key={`missingSections-${plan.missingSections.join("\u001f")}`} planId={plan._id} title="Missing sections" field="missingSections" value={plan.missingSections} />
                             </div>
                         </div>
                     </section>

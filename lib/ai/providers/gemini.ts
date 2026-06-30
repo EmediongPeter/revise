@@ -13,7 +13,15 @@ import {
 import type { BlueprintGenerationProvider, BlueprintGenerationProviderInput } from "@/lib/ai/types";
 import { TrainingBlueprintAISchema } from "@/lib/zod";
 
-const collectGeminiText = (json: Record<string, any>) =>
+type GeminiResponseJson = {
+    candidates?: Array<{
+        content?: {
+            parts?: Array<{ text?: string }>;
+        };
+    }>;
+};
+
+const collectGeminiText = (json: GeminiResponseJson) =>
     json?.candidates?.[0]?.content?.parts
         ?.map((part: { text?: string }) => part.text || "")
         .join("")
@@ -58,11 +66,12 @@ const callGemini = async ({
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
         response = await fetchWithTimeout(
-            `${config.baseUrl}/models/${config.model}:generateContent?key=${config.apiKey}`,
+            `${config.baseUrl}/models/${config.model}:generateContent`,
             {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
+                    "x-goog-api-key": config.apiKey,
                 },
                 body: JSON.stringify(body),
             },
@@ -82,7 +91,6 @@ const callGemini = async ({
     }
 
     const json = await response.json();
-    console.log("🚀 ~ callGemini ~ json:", json.candidates[0].content);
     console.info("[AI Blueprint] gemini:response", {
         status: response.status,
         structured,

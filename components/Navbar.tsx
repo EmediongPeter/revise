@@ -52,6 +52,8 @@ import { FormEvent, PointerEvent, MouseEvent as ReactMouseEvent, useCallback, us
 const DEFAULT_SIDEBAR_WIDTH = 272;
 const MIN_SIDEBAR_WIDTH = 236;
 const MAX_SIDEBAR_WIDTH = 320;
+const SIDEBAR_COLLAPSED_KEY = "revise.sidebar.collapsed";
+const SIDEBAR_WIDTH_KEY = "revise.sidebar.width";
 const VIEWPORT_GUTTER = 12;
 const WORKSPACE_MENU_WIDTH = 360;
 const TEAM_MENU_WIDTH = 280;
@@ -99,6 +101,20 @@ const secondaryNavItems = [
 ];
 
 const clampSidebarWidth = (width: number) => Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));
+
+const getInitialSidebarCollapsed = () => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+};
+
+const getInitialSidebarWidth = () => {
+    if (typeof window === "undefined") return DEFAULT_SIDEBAR_WIDTH;
+
+    const storedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    return Number.isFinite(storedWidth) && storedWidth > 0
+        ? clampSidebarWidth(storedWidth)
+        : DEFAULT_SIDEBAR_WIDTH;
+};
 
 const slugify = (value: string) =>
     value
@@ -165,7 +181,7 @@ const navLinkClass = (active: boolean) =>
     cn(
         "flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium transition",
         active
-            ? "border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] shadow-[var(--shadow-soft-sm)]"
+            ? "border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)]"
             : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]",
     );
 
@@ -1024,6 +1040,23 @@ const Navbar = () => {
     const routeAllowsSidebar = isKnownDashboardPath(pathName, activeWorkspaceSlug);
 
     useEffect(() => {
+        const frame = window.requestAnimationFrame(() => {
+            setCollapsed(getInitialSidebarCollapsed());
+            setSidebarWidth(getInitialSidebarWidth());
+        });
+
+        return () => window.cancelAnimationFrame(frame);
+    }, []);
+
+    const setStoredCollapsed = useCallback((value: boolean | ((current: boolean) => boolean)) => {
+        setCollapsed((current) => {
+            const next = typeof value === "function" ? value(current) : value;
+            window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+            return next;
+        });
+    }, []);
+
+    useEffect(() => {
         document.documentElement.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
         document.documentElement.dataset.sidebarCollapsed = String(
             collapsed || isAuthRoute || isPublicLanding || !routeAllowsSidebar,
@@ -1054,12 +1087,12 @@ const Navbar = () => {
             if (isTyping || event.key !== "[" || event.metaKey || event.ctrlKey || event.altKey) return;
 
             event.preventDefault();
-            setCollapsed(!collapsed);
+            setStoredCollapsed((current) => !current);
         };
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [collapsed]);
+    }, [setStoredCollapsed]);
 
     const handleResizePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
         event.preventDefault();
@@ -1076,6 +1109,16 @@ const Navbar = () => {
     };
 
     const handleResizePointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+        if (dragStart.current) {
+            const finalWidth = clampSidebarWidth(
+                dragStart.current.width + event.clientX - dragStart.current.x,
+            );
+            try {
+                window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(finalWidth));
+            } catch {
+                // Sidebar resizing should still work when storage is unavailable.
+            }
+        }
         dragStart.current = null;
         event.currentTarget.releasePointerCapture(event.pointerId);
     };
@@ -1109,7 +1152,7 @@ const Navbar = () => {
                     aria-label="Collapse sidebar"
                     onMouseEnter={() => setRailHintVisible(true)}
                     onMouseLeave={() => setRailHintVisible(false)}
-                    onClick={() => setCollapsed(true)}
+                    onClick={() => setStoredCollapsed(true)}
                     className={cn(
                         "absolute -right-3 top-1/2 z-[6] flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-muted)] shadow-[var(--shadow-soft-sm)] transition hover:border-[#d97757]/50 hover:text-[var(--text-primary)]",
                         railHintVisible ? "opacity-100" : "opacity-0",
@@ -1137,7 +1180,7 @@ const Navbar = () => {
                 <button
                     type="button"
                     aria-label="Open sidebar"
-                    onClick={() => setCollapsed(false)}
+                    onClick={() => setStoredCollapsed(false)}
                     className="fixed left-4 top-4 z-50 hidden size-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-[var(--shadow-soft-sm)] transition hover:bg-[var(--surface-hover)] lg:inline-flex"
                 >
                     <PanelLeft className="size-4" />

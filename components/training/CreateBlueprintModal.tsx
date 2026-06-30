@@ -44,7 +44,6 @@ const CreateBlueprintModal = ({
         return readySources.filter((source) => {
             if (typeFilter !== "all" && source.sourceType !== typeFilter) return false;
             if (teamFilter !== "all" && source.scope === "teams" && !source.teamIds.includes(teamFilter)) return false;
-            if (teamFilter !== "all" && source.scope === "workspace") return true;
             if (!normalizedQuery) return true;
 
             return [source.title, source.description, source.fileName, source.sourceType]

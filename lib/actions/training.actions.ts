@@ -11,9 +11,9 @@ import TrainingPlan from "@/database/models/training-plan.model";
 import UserProfile from "@/database/models/user-profile.model";
 import Workspace from "@/database/models/workspace.model";
 import WorkspaceMember from "@/database/models/workspace-member.model";
-import { AI_BLUEPRINT_CONTEXT_LIMIT, AI_BLUEPRINT_SYNC_CHUNK_LIMIT } from "@/lib/ai/config";
 import { generateBlueprintFromContext } from "@/lib/ai/generation/blueprint";
-import { retrieveKnowledgeContext, upsertKnowledgeChunks } from "@/lib/ai/pinecone";
+import { upsertKnowledgeChunks } from "@/lib/ai/pinecone";
+import { buildBlueprintEvidence } from "@/lib/ai/retrieval/blueprint-context";
 import type { BlueprintEvidence } from "@/lib/ai/types";
 import { serializeData } from "@/lib/utils";
 import type {
@@ -39,6 +39,8 @@ type TrainingPlanLike = Pick<
     ITrainingPlan,
     | "title"
     | "description"
+    | "iconKey"
+    | "iconColor"
     | "objective"
     | "keyTopics"
     | "requiredKnowledge"
@@ -80,6 +82,8 @@ export type TrainingPlanSummary = {
     sourceIds: string[];
     title: string;
     description?: string;
+    iconKey?: string;
+    iconColor?: string;
     objective?: string;
     keyTopics: string[];
     requiredKnowledge: string[];
@@ -122,6 +126,8 @@ export type TrainingPlanSourceSummary = {
     description?: string;
     sourceType: KnowledgeSourceType;
     status: KnowledgeSourceStatus;
+    scope?: string;
+    teamIds?: string[];
     fileName?: string;
     version: number;
 };
@@ -153,6 +159,8 @@ export type UpdateTrainingPlanPropertiesInput = {
     planId: string;
     title?: string;
     description?: string;
+    iconKey?: string;
+    iconColor?: string;
     goal?: TrainingPlanGoal;
     teamIds?: string[];
 };
@@ -202,7 +210,13 @@ export type UpdateTrainingPlanSourcesInput = {
 export type RegenerateTrainingPlanInput = {
     planId: string;
     feedback?: string;
+    sectionField?: TrainingBlueprintRegenerationField;
 };
+
+export type TrainingBlueprintRegenerationField = Exclude<
+    keyof UpdateTrainingBlueprintInput,
+    "planId" | "trainerGuidance"
+>;
 
 const editableRoles = new Set(["owner", "admin", "trainer"]);
 
@@ -244,6 +258,8 @@ const serializeTrainingPlan = (plan: TrainingPlanLike): TrainingPlanSummary => (
     sourceIds: plan.sourceIds.map((sourceId) => sourceId.toString()),
     title: plan.title,
     description: plan.description,
+    iconKey: plan.iconKey || "clipboard",
+    iconColor: plan.iconColor || "#d97757",
     objective: plan.objective,
     keyTopics: plan.keyTopics || [],
     requiredKnowledge: plan.requiredKnowledge || [],
@@ -291,6 +307,45 @@ const compactList = (items: string[], limit: number) =>
 
 const cleanList = (items?: string[]) =>
     items?.map((item) => item.trim()).filter(Boolean).slice(0, 24);
+
+const regeneratableBlueprintFields = new Set<TrainingBlueprintRegenerationField>([
+    "objective",
+    "keyTopics",
+    "requiredKnowledge",
+    "practiceScenarios",
+    "commonMistakes",
+    "assessmentQuestions",
+    "rolePlayPrompts",
+    "assessmentCriteria",
+    "recommendedAssignments",
+    "missingSections",
+]);
+
+const getSafeAIErrorMessage = (error: unknown, fallback: string) => {
+    const message = error instanceof Error ? error.message : "";
+
+    if (
+        error instanceof SyntaxError ||
+        message.includes("JSON") ||
+        message.includes("Zod") ||
+        message.includes("Unterminated string") ||
+        message.includes("Unexpected token") ||
+        message.includes("response_format") ||
+        message.includes("responseJsonSchema")
+    ) {
+        return "The AI response could not be turned into a clean training draft. Please try again with clearer feedback.";
+    }
+
+    if (message.includes("timed out") || message.includes("aborted")) {
+        return "The AI draft took too long to generate. Please try again.";
+    }
+
+    if (message.includes("API key") || message.includes("not configured")) {
+        return "AI generation is not configured correctly for this workspace.";
+    }
+
+    return fallback;
+};
 
 const inferGoalFromSources = (sources: Array<{ sourceType: string }>): TrainingPlanGoal => {
     if (sources.some((source) => source.sourceType === "sales-script")) return "sales-readiness";
@@ -581,47 +636,6 @@ export const prepareTrainingBlueprintDraft = async (
         inheritedTeams: inheritedTeamIds.length,
     });
 
-    if (chunks.length > AI_BLUEPRINT_SYNC_CHUNK_LIMIT) {
-        const [queuedPlan] = await TrainingPlan.create([
-            {
-                workspaceId: access.workspace._id,
-                teamIds: inheritedTeamIds,
-                sourceIds: sourceObjectIds,
-                title: sources.length === 1
-                    ? `${sources[0].title} readiness blueprint`
-                    : "Cross-source readiness blueprint",
-                description: "Blueprint generation is queued for a larger source set.",
-                objective: "Queued for background AI generation because the selected source set exceeds the synchronous generation threshold.",
-                keyTopics: [],
-                requiredKnowledge: [],
-                practiceScenarios: [],
-                commonMistakes: [],
-                assessmentQuestions: [],
-                rolePlayPrompts: [],
-                assessmentCriteria: [],
-                recommendedAssignments: [],
-                missingSections: [],
-                sourceReferenceNotes: `Queued from ${sources.map((source) => source.title).join(", ")}.`,
-                goal: inferGoalFromSources(sources),
-                status: "draft",
-                generationStatus: "queued",
-                generatedBy: "ai",
-                generationPrompt,
-                needsRegeneration: false,
-                blueprintVersion: 1,
-                trainerGuidance: input.trainerGuidance?.trim() || undefined,
-                createdByClerkId: access.userId,
-                updatedByClerkId: access.userId,
-            },
-        ]);
-
-        revalidatePath(`/${access.workspace.slug}/modules`);
-        revalidatePath(`/${access.workspace.slug}/modules/${queuedPlan._id.toString()}`);
-
-        return { success: true, data: serializeData(serializeTrainingPlan(queuedPlan)) };
-    }
-
-    const sourceById = new Map(sources.map((source) => [source._id.toString(), source]));
     const chunksNeedingEmbeddings = chunks.filter((chunk) => chunk.embeddingStatus !== "embedded");
     console.info("[AI Blueprint] prepare:embedding-check", {
         chunksNeedingEmbeddings: chunksNeedingEmbeddings.length,
@@ -631,7 +645,7 @@ export const prepareTrainingBlueprintDraft = async (
         const sourceChunks = chunksNeedingEmbeddings.filter((chunk) => chunk.sourceId.toString() === source._id.toString());
 
         if (sourceChunks.length > 0) {
-            await upsertKnowledgeChunks({
+            const embeddingResult = await upsertKnowledgeChunks({
                 chunks: sourceChunks,
                 source: {
                     _id: source._id.toString(),
@@ -640,55 +654,32 @@ export const prepareTrainingBlueprintDraft = async (
                     version: source.version,
                 },
             });
+            if (embeddingResult.failed > 0) {
+                console.warn("[AI Blueprint] prepare:embedding-failures", {
+                    sourceId: source._id.toString(),
+                    embedded: embeddingResult.embedded,
+                    failed: embeddingResult.failed,
+                });
+            }
         }
     }
-
-    const query = [
-        "Generate a role-based training blueprint with objectives, key topics, required knowledge, practical scenarios, common mistakes, assessment questions, roleplay prompts, assessment criteria, recommended assignments, and missing source sections.",
-        input.trainerGuidance?.trim(),
-        sources.map((source) => `${source.title} ${source.description || ""} ${source.sourceType}`).join(" "),
-    ]
-        .filter(Boolean)
-        .join("\n");
 
     let evidence: BlueprintEvidence[];
 
     try {
-        console.info("[AI Blueprint] prepare:retrieval-start", {
-            topK: AI_BLUEPRINT_CONTEXT_LIMIT,
-            sourceCount: sources.length,
-        });
-        evidence = await retrieveKnowledgeContext({
+        evidence = await buildBlueprintEvidence({
             workspaceId: access.workspace._id.toString(),
             sources,
+            chunks,
             teamIds: inheritedTeamIds.map((teamId) => teamId.toString()),
-            query,
-            topK: AI_BLUEPRINT_CONTEXT_LIMIT,
+            trainerGuidance: input.trainerGuidance,
+            operation: "prepare",
         });
     } catch (error) {
         return {
             success: false,
             error: error instanceof Error ? error.message : "Could not retrieve source context from Pinecone.",
         };
-    }
-
-    if (evidence.length === 0) {
-        console.info("[AI Blueprint] prepare:retrieval-empty-fallback", {
-            fallbackChunks: Math.min(chunks.length, AI_BLUEPRINT_CONTEXT_LIMIT),
-        });
-        evidence = chunks.slice(0, AI_BLUEPRINT_CONTEXT_LIMIT).map((chunk) => {
-            const source = sourceById.get(chunk.sourceId.toString());
-
-            return {
-                sourceId: chunk.sourceId.toString(),
-                sourceTitle: source?.title || "Selected source",
-                sourceType: source?.sourceType || "source",
-                chunkId: chunk._id.toString(),
-                chunkIndex: chunk.chunkIndex,
-                pageNumber: chunk.pageNumber,
-                content: chunk.content,
-            };
-        });
     }
 
     let draft;
@@ -714,7 +705,7 @@ export const prepareTrainingBlueprintDraft = async (
         });
         return {
             success: false,
-            error: error instanceof Error ? error.message : "AI blueprint generation failed.",
+            error: getSafeAIErrorMessage(error, "AI blueprint generation failed. Please try again."),
         };
     }
 
@@ -797,7 +788,7 @@ export const getTrainingPlanDetail = async (
             .lean(),
         KnowledgeSource.find({ _id: { $in: plan.sourceIds }, workspaceId: access.workspace._id })
             .sort({ title: 1 })
-            .select("_id title description sourceType status fileName version")
+            .select("_id title description sourceType status scope teamIds fileName version")
             .lean(),
         KnowledgeSource.find({
             workspaceId: access.workspace._id,
@@ -805,7 +796,7 @@ export const getTrainingPlanDetail = async (
             status: "ready",
         })
             .sort({ title: 1 })
-            .select("_id title description sourceType status fileName version")
+            .select("_id title description sourceType status scope teamIds fileName version")
             .lean(),
         WorkspaceMember.find({
             workspaceId: access.workspace._id,
@@ -846,6 +837,8 @@ export const getTrainingPlanDetail = async (
             description: source.description,
             sourceType: source.sourceType,
             status: source.status,
+            scope: source.scope,
+            teamIds: (source.teamIds || []).map((teamId: Types.ObjectId) => teamId.toString()),
             fileName: source.fileName,
             version: source.version,
         })),
@@ -855,6 +848,8 @@ export const getTrainingPlanDetail = async (
             description: source.description,
             sourceType: source.sourceType,
             status: source.status,
+            scope: source.scope,
+            teamIds: (source.teamIds || []).map((teamId: Types.ObjectId) => teamId.toString()),
             fileName: source.fileName,
             version: source.version,
         })),
@@ -906,6 +901,18 @@ export const updateTrainingPlanProperties = async (
 
     if (typeof input.description === "string") {
         updates.description = input.description.trim() || undefined;
+    }
+
+    if (typeof input.iconKey === "string") {
+        updates.iconKey = input.iconKey.trim().slice(0, 40) || "clipboard";
+    }
+
+    if (typeof input.iconColor === "string") {
+        const iconColor = input.iconColor.trim();
+        if (!/^#[0-9a-fA-F]{6}$/.test(iconColor)) {
+            return { success: false, error: "Choose a valid six-digit hex icon color." };
+        }
+        updates.iconColor = iconColor;
     }
 
     if (input.goal) {
@@ -1076,6 +1083,7 @@ export const regenerateTrainingPlan = async (
     console.info("[AI Blueprint] regenerate:start", {
         planId: input.planId,
         hasFeedback: Boolean(input.feedback?.trim()),
+        sectionField: input.sectionField || null,
     });
 
     const access = await getActiveWorkspaceAccess();
@@ -1090,6 +1098,10 @@ export const regenerateTrainingPlan = async (
 
     if (!Types.ObjectId.isValid(input.planId)) {
         return { success: false, error: "That training blueprint could not be found." };
+    }
+
+    if (input.sectionField && !regeneratableBlueprintFields.has(input.sectionField)) {
+        return { success: false, error: "That section cannot be regenerated yet." };
     }
 
     const plan = await TrainingPlan.findOne({ _id: input.planId, workspaceId: access.workspace._id });
@@ -1141,24 +1153,6 @@ export const regenerateTrainingPlan = async (
         teams: plan.teamIds.length,
     });
 
-    if (chunks.length > AI_BLUEPRINT_SYNC_CHUNK_LIMIT) {
-        console.info("[AI Blueprint] regenerate:queued", {
-            chunks: chunks.length,
-            syncLimit: AI_BLUEPRINT_SYNC_CHUNK_LIMIT,
-        });
-        plan.generationStatus = "queued";
-        plan.needsRegeneration = true;
-        plan.regenerationFeedback = feedback;
-        plan.updatedByClerkId = access.userId;
-        await plan.save();
-
-        revalidatePath(`/${access.workspace.slug}/modules`);
-        revalidatePath(`/${access.workspace.slug}/modules/${input.planId}`);
-
-        return { success: true, data: serializeData(serializeTrainingPlan(plan)) };
-    }
-
-    const sourceById = new Map(sources.map((source) => [source._id.toString(), source]));
     const chunksNeedingEmbeddings = chunks.filter((chunk) => chunk.embeddingStatus !== "embedded");
     console.info("[AI Blueprint] regenerate:embedding-check", {
         chunksNeedingEmbeddings: chunksNeedingEmbeddings.length,
@@ -1168,7 +1162,7 @@ export const regenerateTrainingPlan = async (
         const sourceChunks = chunksNeedingEmbeddings.filter((chunk) => chunk.sourceId.toString() === source._id.toString());
 
         if (sourceChunks.length > 0) {
-            await upsertKnowledgeChunks({
+            const embeddingResult = await upsertKnowledgeChunks({
                 chunks: sourceChunks,
                 source: {
                     _id: source._id.toString(),
@@ -1177,56 +1171,33 @@ export const regenerateTrainingPlan = async (
                     version: source.version,
                 },
             });
+            if (embeddingResult.failed > 0) {
+                console.warn("[AI Blueprint] regenerate:embedding-failures", {
+                    sourceId: source._id.toString(),
+                    embedded: embeddingResult.embedded,
+                    failed: embeddingResult.failed,
+                });
+            }
         }
     }
-
-    const query = [
-        "Regenerate a role-based training blueprint with objectives, key topics, required knowledge, practical scenarios, common mistakes, assessment questions, roleplay prompts, assessment criteria, recommended assignments, and missing source sections.",
-        plan.trainerGuidance,
-        feedback,
-        sources.map((source) => `${source.title} ${source.description || ""} ${source.sourceType}`).join(" "),
-    ]
-        .filter(Boolean)
-        .join("\n");
 
     let evidence: BlueprintEvidence[];
 
     try {
-        console.info("[AI Blueprint] regenerate:retrieval-start", {
-            topK: AI_BLUEPRINT_CONTEXT_LIMIT,
-            sourceCount: sources.length,
-        });
-        evidence = await retrieveKnowledgeContext({
+        evidence = await buildBlueprintEvidence({
             workspaceId: access.workspace._id.toString(),
             sources,
+            chunks,
             teamIds: plan.teamIds.map((teamId: Types.ObjectId) => teamId.toString()),
-            query,
-            topK: AI_BLUEPRINT_CONTEXT_LIMIT,
+            trainerGuidance: plan.trainerGuidance,
+            regenerationFeedback: feedback,
+            operation: "regenerate",
         });
     } catch (error) {
         return {
             success: false,
-            error: error instanceof Error ? error.message : "Could not retrieve source context from Pinecone.",
+            error: getSafeAIErrorMessage(error, "Could not prepare source context for regeneration."),
         };
-    }
-
-    if (evidence.length === 0) {
-        console.info("[AI Blueprint] regenerate:retrieval-empty-fallback", {
-            fallbackChunks: Math.min(chunks.length, AI_BLUEPRINT_CONTEXT_LIMIT),
-        });
-        evidence = chunks.slice(0, AI_BLUEPRINT_CONTEXT_LIMIT).map((chunk) => {
-            const source = sourceById.get(chunk.sourceId.toString());
-
-            return {
-                sourceId: chunk.sourceId.toString(),
-                sourceTitle: source?.title || "Selected source",
-                sourceType: source?.sourceType || "source",
-                chunkId: chunk._id.toString(),
-                chunkIndex: chunk.chunkIndex,
-                pageNumber: chunk.pageNumber,
-                content: chunk.content,
-            };
-        });
     }
 
     let draft;
@@ -1252,13 +1223,19 @@ export const regenerateTrainingPlan = async (
         });
         return {
             success: false,
-            error: error instanceof Error ? error.message : "AI blueprint regeneration failed.",
+            error: getSafeAIErrorMessage(error, "AI blueprint regeneration failed. Please try again."),
         };
     }
 
+    const nextDraft = input.sectionField
+        ? { [input.sectionField]: draft[input.sectionField] }
+        : {
+            ...draft,
+            goal: inferGoalFromSources(sources),
+        };
+
     Object.assign(plan, {
-        ...draft,
-        goal: inferGoalFromSources(sources),
+        ...nextDraft,
         status: "review",
         generationStatus: "review",
         generatedBy: "ai",

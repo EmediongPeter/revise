@@ -1,4 +1,4 @@
-import { model, models, Schema } from "mongoose";
+import { deleteModel, model, models, Schema } from "mongoose";
 import { IWorkspaceMember } from "@/types";
 
 const WorkspaceMemberSchema = new Schema<IWorkspaceMember>(
@@ -9,7 +9,7 @@ const WorkspaceMemberSchema = new Schema<IWorkspaceMember>(
         displayName: { type: String },
         role: {
             type: String,
-            enum: ["owner", "admin", "trainer", "member"],
+            enum: ["owner", "admin", "trainer", "trainee", "member"],
             required: true,
             default: "member",
         },
@@ -19,6 +19,7 @@ const WorkspaceMemberSchema = new Schema<IWorkspaceMember>(
             required: true,
             default: "invited",
         },
+        teamIds: [{ type: Schema.Types.ObjectId, ref: "Team", index: true }],
         invitedByClerkId: { type: String },
     },
     { timestamps: true },
@@ -26,6 +27,14 @@ const WorkspaceMemberSchema = new Schema<IWorkspaceMember>(
 
 WorkspaceMemberSchema.index({ workspaceId: 1, email: 1 }, { unique: true });
 WorkspaceMemberSchema.index({ workspaceId: 1, clerkId: 1 });
+WorkspaceMemberSchema.index({ workspaceId: 1, teamIds: 1, status: 1 });
+
+const cachedWorkspaceMember = models.WorkspaceMember;
+const cachedRolePath = cachedWorkspaceMember?.schema.path("role") as unknown as { enumValues?: string[] } | undefined;
+
+if (cachedWorkspaceMember && !cachedRolePath?.enumValues?.includes("trainee")) {
+    deleteModel("WorkspaceMember");
+}
 
 const WorkspaceMember =
     models.WorkspaceMember || model<IWorkspaceMember>("WorkspaceMember", WorkspaceMemberSchema);

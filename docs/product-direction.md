@@ -1,5 +1,7 @@
 Yes. And I think your discomfort is useful, not a bad sign. It means you are sensing that “upload document, chunk document, make dashboard” is not the product. That is just infrastructure.
 
+# Product Direction
+
 The product is closer to this:
 
 **Revise helps managers turn company knowledge into measurable employee readiness.**

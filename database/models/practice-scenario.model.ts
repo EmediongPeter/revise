@@ -4,7 +4,8 @@ import { IPracticeScenario } from "@/types";
 const PracticeScenarioSchema = new Schema<IPracticeScenario>(
     {
         workspaceId: { type: Schema.Types.ObjectId, ref: "Workspace", required: true, index: true },
-        moduleId: { type: Schema.Types.ObjectId, ref: "TrainingModule", required: true, index: true },
+        trainingPlanId: { type: Schema.Types.ObjectId, ref: "TrainingPlan", required: true, index: true },
+        moduleId: { type: Schema.Types.ObjectId, ref: "TrainingModule", index: true },
         teamIds: [{ type: Schema.Types.ObjectId, ref: "Team", index: true }],
         sourceIds: [{ type: Schema.Types.ObjectId, ref: "KnowledgeSource", index: true }],
         title: { type: String, required: true, trim: true },
@@ -27,7 +28,7 @@ const PracticeScenarioSchema = new Schema<IPracticeScenario>(
     { timestamps: true },
 );
 
-PracticeScenarioSchema.index({ moduleId: 1, sortOrder: 1 });
+PracticeScenarioSchema.index({ trainingPlanId: 1, sortOrder: 1 });
 PracticeScenarioSchema.index({ workspaceId: 1, status: 1, updatedAt: -1 });
 PracticeScenarioSchema.index({ workspaceId: 1, teamIds: 1, status: 1 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -119,7 +119,6 @@ const KnowledgeSourceOperationsTable = ({
     const [openEditor, setOpenEditor] = useState<{ sourceId: string; field: "type" | "teams" } | null>(null);
     const [contextMenu, setContextMenu] = useState<{ sourceId: string; x: number; y: number } | null>(null);
     const [isPending, startTransition] = useTransition();
-    const teamNameById = useMemo(() => new Map(teams.map((team) => [team._id, team.name])), [teams]);
     const contextSource = contextMenu ? sources.find((source) => source._id === contextMenu.sourceId) : undefined;
 
     useEffect(() => {
@@ -184,8 +183,13 @@ const KnowledgeSourceOperationsTable = ({
 
     const copySourceLink = async (sourceId: string) => {
         const href = `${window.location.origin}/${workspaceSlug}/knowledge/${sourceId}`;
-        await navigator.clipboard.writeText(href);
-        toast.success("Source link copied.");
+        try {
+            if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable.");
+            await navigator.clipboard.writeText(href);
+            toast.success("Source link copied.");
+        } catch {
+            toast.error("Could not copy the source link.");
+        }
     };
 
     const archiveSource = (sourceId: string) => {
@@ -219,7 +223,6 @@ const KnowledgeSourceOperationsTable = ({
                         <span />
                     </div>
                     {sources.map((source) => {
-                        const scopedTeams = source.teamIds.map((teamId) => teamNameById.get(teamId) || "Unknown").filter(Boolean);
                         const sourceTypeLabel = sourceTypeLabels[source.sourceType] || source.sourceType;
                         const sourceHref = `/${workspaceSlug}/knowledge/${source._id}`;
                         const sourceTeams = source.scope === "workspace" ? teams : teams.filter((team) => source.teamIds.includes(team._id));
@@ -407,7 +410,7 @@ const KnowledgeSourceOperationsTable = ({
                         Copy link
                     </button>
                     {contextSource.fileUrl && (
-                        <Link href={contextSource.fileUrl} target="_blank" rel="noreferrer" className="flex w-full items-center gap-3 px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]">
+                        <Link href={`/api/knowledge/${contextSource._id}/download`} className="flex w-full items-center gap-3 px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]">
                             <Download className="size-4" />
                             Download original
                         </Link>
